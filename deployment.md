@@ -37,7 +37,8 @@ VITE_TURNSTILE_SITE_KEY="1x00000000000000000000AA"
 # Database (Neon PostgreSQL)
 DATABASE_URL="postgresql://<user>:<password>@<ep-pooler>.neon.tech/kappama?sslmode=require"
 
-# Clerk Secret Key (Server)
+# Clerk Auth (Server)
+CLERK_PUBLISHABLE_KEY="pk_test_..."
 CLERK_SECRET_KEY="sk_test_..."
 
 # Turnstile Test Secret Key (Always Passes untuk dev lokal)
@@ -47,6 +48,7 @@ TURNSTILE_SECRET_KEY="1x0000000000000000000000000000000AA"
 CLOUDINARY_CLOUD_NAME="your_cloud_name"
 CLOUDINARY_API_KEY="your_api_key"
 CLOUDINARY_API_SECRET="your_api_secret"
+# Alternatif: CLOUDINARY_URL="cloudinary://<key>:<secret>@<cloud_name>"
 
 # Resend Email Service
 RESEND_API_KEY="re_..."

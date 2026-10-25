@@ -18,7 +18,7 @@ Website resmi organisasi kedaerahan KAPPAMA di Malang untuk citra organisasi, pe
 ## 🚀 Panduan Memulai Cepat (Local Development)
 
 ### 1. Prasyarat
-- Node.js versi 18 atau 20 LTS
+- Node.js versi 20+ LTS (lihat `.nvmrc` dan `package.json` engines)
 - [pnpm](https://pnpm.io/) (`npm i -g pnpm`)
 
 ### 2. Pemasangan Dependensi

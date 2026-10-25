@@ -17,7 +17,59 @@
     />
   </head>
   <body class="bg-[#F8FAFC] text-[#0F172A] font-sans antialiased min-h-screen">
-    <div id="root"></div>
+    <div id="root">
+      <!-- Indikator Pemuatan Awal Ringan (Mencegah Layar Putih Sebelum Bundle React Aktif) -->
+      <div
+        style="
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          min-height: 100vh;
+          background-color: #F8FAFC;
+          font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+          gap: 16px;
+        "
+      >
+        <div
+          style="
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            background-color: #0F1E36;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #FFFFFF;
+            font-weight: 800;
+            font-size: 24px;
+            box-shadow: 0 10px 25px -5px rgba(15, 30, 54, 0.2);
+          "
+        >
+          K
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <div
+            style="
+              width: 8px;
+              height: 8px;
+              border-radius: 50%;
+              background-color: #D97706;
+              animation: kappamaPulse 1s infinite alternate;
+            "
+          ></div>
+          <span style="font-size: 13px; font-weight: 600; color: #0F1E36; letter-spacing: 0.3px;">
+            Memuat KAPPAMA...
+          </span>
+        </div>
+        <style>
+          @keyframes kappamaPulse {
+            0% { opacity: 0.3; transform: scale(0.8); }
+            100% { opacity: 1; transform: scale(1.2); }
+          }
+        </style>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

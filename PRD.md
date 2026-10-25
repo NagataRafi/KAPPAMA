@@ -21,7 +21,7 @@ Versi dokumen: 1.2 (revisi 1.1: Admin Konten dapat menyetujui/menolak pendaftar 
 
 ---
 
-## 1. Ringkasan Produk
+## 1. Ringkasan Produk  
 
 **KAPPAMA** adalah organisasi mahasiswa daerah yang mewadahi pelajar dan mahasiswa asal Pacitan, Jawa Timur, yang menempuh studi di Kota Malang.
 

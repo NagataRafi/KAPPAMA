@@ -7,9 +7,30 @@ import {
 } from './types';
 
 export interface CloudinaryConfig {
-  cloudName: string;
-  apiKey: string;
+  cloudName?: string;
+  apiKey?: string;
   apiSecret?: string; // Rahasia, hanya di server
+  cloudinaryUrl?: string; // Format: cloudinary://api_key:api_secret@cloud_name
+}
+
+/**
+ * Helper untuk mengekstrak cloudName, apiKey, dan apiSecret dari CLOUDINARY_URL.
+ */
+export function parseCloudinaryUrl(url?: string): {
+  cloudName?: string;
+  apiKey?: string;
+  apiSecret?: string;
+} {
+  if (!url) return {};
+  const match = url.match(/^cloudinary:\/\/([^:]+):([^@]+)@(.+)$/);
+  if (match) {
+    return {
+      apiKey: match[1],
+      apiSecret: match[2],
+      cloudName: match[3],
+    };
+  }
+  return {};
 }
 
 /**
@@ -29,14 +50,21 @@ export class CloudinaryStorageAdapter implements StorageService {
   private apiSecret?: string;
 
   constructor(config: CloudinaryConfig) {
-    this.cloudName = config.cloudName;
-    this.apiKey = config.apiKey;
-    this.apiSecret = config.apiSecret;
+    const fromUrl = parseCloudinaryUrl(config.cloudinaryUrl);
+    this.cloudName = config.cloudName || fromUrl.cloudName || '';
+    this.apiKey = config.apiKey || fromUrl.apiKey || '';
+    this.apiSecret = config.apiSecret || fromUrl.apiSecret;
+
+    if (!this.cloudName) {
+      console.warn('[StorageService] Peringatan: CLOUDINARY_CLOUD_NAME tidak ditemukan.');
+    }
   }
 
   async createUploadSignature(options: UploadSignatureOptions): Promise<UploadSignatureResult> {
     if (!this.apiSecret) {
-      throw new Error('CLOUDINARY_API_SECRET diperlukan untuk membuat signature unggah di server.');
+      throw new Error(
+        'CLOUDINARY_API_SECRET diperlukan untuk membuat signature unggah di server. Pastikan CLOUDINARY_API_SECRET atau CLOUDINARY_URL telah diatur di .dev.vars.'
+      );
     }
 
     const timestamp = Math.floor(Date.now() / 1000);

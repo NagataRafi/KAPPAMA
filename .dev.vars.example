@@ -2,22 +2,27 @@
 # PAGES FUNCTIONS ENVIRONMENT VARIABLES TEMPLATE (BACKEND) — WEBSITE KAPPAMA
 # Salin berkas ini ke `.dev.vars` untuk backend Cloudflare Pages Functions lokal.
 # JANGAN PERNAH MENYIMPAN KUNCI ASLI DI REPOSITORI.
+# DILARANG MENGGUNAKAN AWALAN VITE_* DI BERKAS INI.
 # ==============================================================================
 
 # Database: Neon PostgreSQL
 DATABASE_URL="postgresql://user:password@ep-sample-pooler.neon.tech/kappama?sslmode=require"
 
 # Otentikasi Server: Clerk
+CLERK_PUBLISHABLE_KEY="pk_test_sample"
 CLERK_SECRET_KEY="sk_test_sample"
 
 # Proteksi Bot Server: Cloudflare Turnstile
-# Untuk lokal dev, gunakan Always Passes Test Secret Key: 1x0000000000000000000000000000000AA
+# Untuk dev lokal, gunakan Always Passes Test Secret Key:
 TURNSTILE_SECRET_KEY="1x0000000000000000000000000000000AA"
 
 # Cloudinary (StorageService)
+# Opsi 1 (Direkomendasikan): Variabel terpisah
 CLOUDINARY_CLOUD_NAME="your_cloud_name"
 CLOUDINARY_API_KEY="your_api_key"
 CLOUDINARY_API_SECRET="your_api_secret"
+# Opsi 2 (Alternatif): Satu format URL
+# CLOUDINARY_URL="cloudinary://api_key:api_secret@cloud_name"
 
 # Layanan Email: Resend
 RESEND_API_KEY="re_sample"

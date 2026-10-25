@@ -11,6 +11,15 @@ Format ini mengacu pada [Keep a Changelog](https://keepachangelog.com/id/1.1.0/)
 
 ---
 
+## [0.3.1] - 2026-10-25
+### Diperbaiki
+- **Migrasi Database Neon:** Memperbarui `drizzle-orm` (v0.45.4) dan `drizzle-kit` (v0.31.11), memperbaiki skrip `pnpm db:migrate` menjadi `drizzle-kit migrate`, dan mengonfirmasi 17 tabel relasional terbentuk utuh di database Neon via query `information_schema`.
+- **Wrangler Pages Functions:** Memperbarui `wrangler` ke v4.152.0 untuk mengatasi crash runtime `0xC0000409` pada Windows, serta mematok Node.js v20+ LTS via `package.json` engines dan `.nvmrc`.
+- **Standarisasi Variabel Lingkungan:** Menyeragamkan penamaan variabel di seluruh proyek (`CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `TURNSTILE_SECRET_KEY`, `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, dan alternatif `CLOUDINARY_URL`), menghapus variabel rahasia berawalan `VITE_`, dan menambahkan audit keamanan bundle produksi `dist/` (0 rahasia bocor).
+- **Indikator Pemuatan Awal (Layar Putih):** Menambahkan spinner/animasi denyut ringan bertema warna biru dongker `#0F1E36` dan emas soga `#D97706` di `index.html` untuk mencegah layar putih kosong sebelum bundle dimuat.
+
+---
+
 ## [0.3.0] - 2026-10-25
 ### Ditambahkan
 - Implementasi penuh Fase 2 (Desain Sistem & Seluruh Halaman Publik):
