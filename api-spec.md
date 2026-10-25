@@ -178,8 +178,8 @@ Semua endpoint ini dapat diakses oleh siapa saja (**Pengunjung**, tanpa otentika
 - `POST/PUT/DELETE /api/admin/albums`
 - `PUT /api/admin/org/profile`
 - `POST/PUT/DELETE /api/admin/leaders`
-- `POST /api/admin/bylaws/upload`
-- `POST /api/admin/uploads` (Upload gambar ke R2, menghasilkan file key)
+- `POST /api/admin/bylaws/upload` (Unggah dokumen PDF AD/ART; disiapkan opsi cadangan berkas statis `public/` atau Google Drive)
+- `POST /api/admin/uploads/signature` (Membuat signature unggah aman Cloudinary untuk direct upload dari klien, menghasilkan `public_id` yang disimpan ke kolom `*_key`)
 
 ---
 

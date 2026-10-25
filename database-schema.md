@@ -238,8 +238,12 @@ Untuk menjamin kueri cepat pada skala pertumbuhan data dan pencegahan scanning l
 
 ---
 
-## 3. Aturan Penghapusan Lunak (Soft Delete)
+## 3. Aturan Penyimpanan Media & Penghapusan Lunak (Soft Delete)
 
+### 3.1 Aturan Kolom Kunci Media (*_key)
+Seluruh kolom penyimpan referensi media (`photo_key`, `logo_key`, `file_key`, `cover_key`) **hanya menyimpan `public_id` Cloudinary** (misal: `kappama/programs/proker-1-cover`) atau path berkas statis lokal (misal: `/docs/ad-art-kappama.pdf` pada opsi cadangan PDF), **bukan URL absolut penuh**. URL CDN teroptimasi dibangun secara dinamis di klien dan server melalui antarmuka `StorageService`.
+
+### 3.2 Aturan Penghapusan Lunak (Soft Delete)
 Tabel berikut menerapkan soft delete dengan kolom `deleted_at timestamp with time zone`:
 - `member_profiles`
 - `programs`

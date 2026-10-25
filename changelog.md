@@ -11,6 +11,17 @@ Format ini mengacu pada [Keep a Changelog](https://keepachangelog.com/id/1.1.0/)
 
 ---
 
+## [0.2.1] - 2026-10-25
+### Diubah
+- Mengganti penyimpanan media utama dari Cloudflare R2 ke Cloudinary (free-tier) sesuai PRD v1.2 karena aktivasi R2 ditunda.
+- Menambahkan antarmuka `StorageService` beserta implementasi `CloudinaryStorageAdapter` (signed direct uploads, optimasi otomatis `f_auto,q_auto`, dan hapus berkas) serta `MockStorageAdapter` untuk pengembangan lokal.
+- Memisahkan konfigurasi environment: `.env` khusus frontend Vite (`VITE_*`) dan `.dev.vars` untuk Cloudflare Pages Functions backend.
+- Menghapus konfigurasi binding `R2_STORAGE` dan `R2_BUCKET_NAME` dari `wrangler.toml` dan template env.
+- Menambahkan catatan keputusan ADR-004 pada `arsitektur.md`.
+- Menyiapkan strategi cadangan berkas PDF AD/ART (statis di `public/` atau Google Drive embed) untuk mengantisipasi pembatasan raw PDF di Cloudinary free tier.
+
+---
+
 ## [0.2.0] - 2026-10-25
 ### Ditambahkan
 - Scaffold proyek Vite + React 18 + TypeScript + Tailwind CSS.

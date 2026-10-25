@@ -9,7 +9,7 @@ Website resmi organisasi kedaerahan KAPPAMA di Malang untuk citra organisasi, pe
 - **Backend:** Cloudflare Pages Functions (`/functions`) dengan Hono Router
 - **Database & ORM:** Neon Serverless PostgreSQL + Drizzle ORM
 - **Autentikasi:** Clerk (Google OAuth)
-- **Penyimpanan Berkas:** Cloudflare R2
+- **Penyimpanan Gambar:** Cloudinary via `StorageService` (Cloudflare R2 disiapkan sebagai adapter v2)
 - **Email:** Resend
 - **Bot Protection:** Cloudflare Turnstile
 
@@ -27,17 +27,23 @@ pnpm install
 ```
 
 ### 3. Konfigurasi Lingkungan
-Salin `.env.example` ke `.env` dan lengkapi kredensial lokal:
-```bash
-cp .env.example .env
-```
+Proyek memisahkan variabel lingkungan frontend dan backend:
+1. **Frontend Vite:** Salin `.env.example` ke `.env`
+   ```bash
+   cp .env.example .env
+   ```
+2. **Backend Pages Functions:** Salin `.dev.vars.example` ke `.dev.vars` (dibaca oleh Wrangler saat menjalankan fungsi server lokal)
+   ```bash
+   cp .dev.vars.example .dev.vars
+   ```
+> **Catatan Keamanan:** Variabel rahasia (`CLERK_SECRET_KEY`, `TURNSTILE_SECRET_KEY`, `CLOUDINARY_API_SECRET`, dll.) hanya diletakkan di `.dev.vars`, sedangkan `.env` hanya untuk variabel `VITE_*` dan `DATABASE_URL` (untuk CLI Drizzle).
 
 ### 4. Menjalankan Aplikasi
 ```bash
-# Menjalankan frontend Vite dev server
+# Menjalankan frontend Vite dev server (port 5173)
 pnpm dev
 
-# Menjalankan Pages Functions lokal
+# Menjalankan Pages Functions lokal via Wrangler (port 8788)
 pnpm dev:functions
 ```
 

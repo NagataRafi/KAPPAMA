@@ -12,9 +12,12 @@ flowchart TD
     
     subgraph Cloudflare["Cloudflare Edge Network"]
         CDN["Cloudflare CDN & WAF / Turnstile"]
-        PagesStatic["Cloudflare Pages Static Assets\n(HTML, JS, CSS, Media Caching)"]
+        PagesStatic["Cloudflare Pages Static Assets\n(HTML, JS, CSS, Media Statis & Fallback PDF)"]
         PagesFunc["Pages Functions (/functions/api/[[route]].ts)\nHono Router API Engine"]
-        R2["Cloudflare R2 Bucket\n(Foto, PDF AD/ART, Profil)"]
+    end
+
+    subgraph Storage["Media & Image CDN"]
+        Cloudinary["Cloudinary (Free Tier)\nStorageService (Signed Upload & Image CDN)\n*Adapter R2 disiapkan sebagai alternatif v2"]
     end
 
     subgraph Auth["Identity Provider"]
@@ -36,9 +39,10 @@ flowchart TD
     
     PagesFunc -->|Verifikasi JWT Token| Clerk
     PagesFunc -->|SQL Queries via HTTP/WebSocket| Neon
-    PagesFunc -->|Binding Storage Get/Put| R2
+    PagesFunc -->|Buat Upload Signature & Hapus Media| Cloudinary
     PagesFunc -->|Kirim Transaksional Email| Resend
-    PagesFunc -->|Stream Media Cache /media/*| Client
+    Client -->|Direct Signed Upload Berkas Foto| Cloudinary
+    Client -->|Ambil Gambar Teroptimasi (f_auto, q_auto)| Cloudinary
 ```
 
 ---
@@ -60,11 +64,11 @@ kappama/
 │       ├── me/                  # Route data profil & onboarding pengguna login
 │       ├── members/             # Route direktori anggota (auth active member)
 │       ├── lookups/             # Route master data wilayah, kampus, prodi
-│       └── admin/               # Route khusus admin (konten, peran, persetujuan, ekspor)
+│       └── admin/               # Route khusus admin (konten, peran, persetujuan, upload signature)
 ├── src/                         # Frontend Application (React 18 + Vite)
 │   ├── assets/                  # SVG, icon lokal, motif batik Pacitan
 │   ├── components/              # Komponen UI
-│   │   ├── ui/                  # Komponen shadcn/ui primitives
+│   │   ├── ui/                  # Komponen UI primitives
 │   │   ├── layout/              # Navbar, Footer, AdminSidebar, PageHeader
 │   │   ├── common/              # EmptyState, ErrorBoundary, LoadingSkeleton, TurnstileWidget
 │   │   └── modules/             # Komponen modular per domain fitur (proker, galeri, direktori)
@@ -79,12 +83,15 @@ kappama/
 │   └── main.tsx                 # Entry point klien
 ├── shared/                      # Kode & Skema Bersama Frontend + Backend
 │   ├── schema/                  # Zod validation schema (auth, member, proker, etc.)
-│   └── types/                   # TypeScript interfaces & enums
+│   ├── services/
+│   │   └── storage/             # Abstraksi StorageService (Cloudinary + Mock dev)
+│   ├── types/                   # TypeScript interfaces & enums
+│   └── utils/                   # Utilitas bersama (getEffectiveStatus)
 ├── db/                          # Database & ORM
 │   ├── schema.ts                # Drizzle ORM PostgreSQL schema
 │   ├── migrations/              # Berkas migrasi Drizzle
 │   └── seed/                    # Seed master data wilayah, kampus, & dummy dev
-├── public/                      # Aset statis publik (favicon, robots.txt, _headers)
+├── public/                      # Aset statis publik (favicon, robots.txt, _headers, fallback PDF)
 ├── drizzle.config.ts            # Konfigurasi migrasi Drizzle
 ├── vite.config.ts               # Konfigurasi Vite
 ├── tailwind.config.ts           # Konfigurasi tema Tailwind (Navy & Gold Soga)
@@ -95,44 +102,39 @@ kappama/
 
 ---
 
-## 3. Alur Request & Otorisasi
+## 3. Alur Unggah Berkas & Abstraksi StorageService
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User as Pengguna (Browser)
-    participant Edge as Cloudflare Pages (/api/*)
-    participant Clerk as Clerk Backend SDK
-    participant DB as Neon PostgreSQL
+Untuk menjaga fleksibilitas dan tidak mengikat kode aplikasi ke satu vendor penyimpanan:
+1. Seluruh operasi media dibungkus dalam antarmuka `StorageService`:
+   - `createUploadSignature(options)`: Membuat parameter dan signature berumur pendek di server menggunakan `CLOUDINARY_API_SECRET`.
+   - `buildImageUrl(publicId, options)`: Membangun URL responsif CDN dengan transformasi otomatis (`f_auto,q_auto`, lebar sesuai tampilan).
+   - `deleteImage(publicId)`: Menghapus gambar di penyimpanan awan.
+2. Alur Pengunggahan Gambar (Direct Signed Upload):
+   ```mermaid
+   sequenceDiagram
+       autonumber
+       actor Admin as Browser Admin
+       participant Function as Pages Function (/api/admin/uploads/signature)
+       participant Cloudinary as Cloudinary API / CDN
+       participant DB as Neon Database
 
-    User->>Edge: HTTP Request (Method, URL, Authorization: Bearer <token>)
-    Edge->>Edge: Rate Limiter & Security Header Check
-    
-    alt Endpoint Publik (/api/public/*)
-        Edge->>DB: Query data terbit (status = published)
-        DB-->>Edge: Data publik
-        Edge-->>User: 200 OK + Data
-    else Endpoint Terproteksi
-        Edge->>Clerk: Verifikasi Session Token JWT
-        alt Token Tidak Valid / Kadaluwarsa
-            Edge-->>User: 401 Unauthorized
-        else Token Valid
-            Edge->>DB: Query tabel `users` & `member_profiles` (by clerk_user_id)
-            alt User Belum Terdaftar
-                Edge-->>User: 403 Forbidden (Arahkan ke /onboarding)
-            else User Ada
-                Edge->>Edge: Hitung getEffectiveStatus() [Cek lazy auto-approve 24h]
-                alt Status Pending/Rejected & Mencoba Akses Direktori/Admin
-                    Edge-->>User: 403 Forbidden (Arahkan ke /status)
-                else Otorisasi Sesuai Peran
-                    Edge->>DB: Eksekusi Query Bisnis
-                    DB-->>Edge: Hasil Query
-                    Edge-->>User: 200 OK + Response Payload
-                end
-            end
-        end
-    end
-```
+       Admin->>Function: Minta signature unggah (POST folder, tipe berkas)
+       Function->>Function: Validasi sesi Admin (Clerk) & otorisasi
+       Function->>Function: Buat SHA-1 HMAC Signature dengan CLOUDINARY_API_SECRET
+       Function-->>Admin: Kembalikan { signature, timestamp, apiKey, folder, uploadUrl }
+       Admin->>Cloudinary: POST multipart/form-data langsung ke uploadUrl
+       Cloudinary-->>Admin: 200 OK + { public_id, secure_url, format, bytes }
+       Admin->>Function: Kirim data entitas (misal Proker/Galeri) dengan photo_key = public_id
+       Function->>DB: Simpan public_id ke kolom *_key
+   ```
+3. Penyajian Gambar:
+   - Klien memanggil `storageService.buildImageUrl(photo_key, { width: 800 })`.
+   - Menghasilkan URL langsung CDN Cloudinary: `https://res.cloudinary.com/<cloud>/image/upload/f_auto,q_auto,w_800/<public_id>`.
+4. Penanganan Khusus Berkas PDF AD/ART:
+   - Pengiriman berkas PDF mentah dari akun Cloudinary gratis berpotensi dibatasi oleh setelan keamanan akun bawaan.
+   - Jika terbukti dibatasi pada uji coba Fase 4, disiapkan 2 opsi cadangan tanpa mengubah antarmuka admin:
+     a. Berkas statis di folder `public/docs/ad-art-kappama.pdf` yang disajikan via Cloudflare Pages.
+     b. Tautan sematan dokumen Google Drive / viewer alternatif.
 
 ---
 
@@ -145,53 +147,18 @@ Karena Cloudflare Pages Functions tidak menyediakan cron job bawaan gratis, atur
    - `submitted_at = NOW()`
    - `approval_type = NULL`
 2. Fungsi utilitas server tunggal `getEffectiveStatus(member)` dieksekusi di setiap pengecekan otorisasi:
-   ```typescript
-   export function getEffectiveStatus(member: {
-     status: MemberStatus;
-     submittedAt: Date | null;
-   }): { status: MemberStatus; isAutoPromoted: boolean } {
-     if (member.status === 'pending' && member.submittedAt) {
-       const twentyFourHoursMs = 24 * 60 * 60 * 1000;
-       const isPast24Hours = (Date.now() - new Date(member.submittedAt).getTime()) >= twentyFourHoursMs;
-       if (isPast24Hours) {
-         return { status: 'active', isAutoPromoted: true };
-       }
-     }
-     return { status: member.status, isAutoPromoted: false };
-   }
-   ```
-3. Jika `isAutoPromoted === true`, server secara asynchronous atau inline melakukan update status di database:
-   - `status = 'active'`
-   - `approved_at = submitted_at + interval '24 hours'`
-   - `approval_type = 'auto'`
-   - Mencatat event transisi otomatis ke `audit_logs`.
+   - Jika waktu `now() >= submitted_at + 24 jam`, otomatis dihitung sebagai `active`.
+   - Server memperbarui baris database secara inline/asynchronous (`status = 'active'`, `approval_type = 'auto'`) dan mencatatnya ke `audit_logs`.
 
 ---
 
-## 5. Alur Pengunggahan File ke Cloudflare R2
-
-1. Pengguna (Admin Konten / Anggota untuk foto profil) mengunggah file gambar/PDF.
-2. Di sisi klien:
-   - Gambar dikompresi di browser menggunakan Canvas/WebWorker ke format WebP (dimensi maksimal 1600px atau 1920px untuk sampul, target ukuran ≤ 400KB).
-3. Request multipart/form-data dikirim ke endpoint Pages Functions `/api/admin/uploads` atau `/api/me/avatar`.
-4. Server memverifikasi otorisasi, MIME type sebenarnya (magic number check), dan batas ukuran.
-5. File disimpan ke Cloudflare R2 dengan key berformat UUID acak:
-   - `media/programs/{uuid}.webp`
-   - `media/albums/{uuid}.webp`
-   - `media/avatars/{uuid}.webp`
-   - `docs/bylaws/{uuid}.pdf`
-6. File disajikan ke publik melalui route Pages Function `/media/*` dengan header HTTP Cache:
-   - `Cache-Control: public, max-age=31536000, immutable`
-
----
-
-## 6. Estimasi Pemakaian Kuota Gratis (Free Tier)
+## 5. Estimasi Pemakaian Kuota Gratis (Free Tier)
 
 | Layanan | Batas Gratis Resmi | Estimasi Pemakaian KAPPAMA (v1) | Status Keamanan Kuota |
 |---|---|---|---|
 | **Cloudflare Pages** | Build 500/bln, Unlimited bandwidth | ~50 build/bln, ~10 GB bandwidth | Sangat Aman |
 | **Pages Functions** | 100.000 requests / hari | Rata-rata < 1.000 requests / hari | Sangat Aman |
-| **Cloudflare R2** | 10 GB penyimpanan, 10M reads/bln, 1M writes/bln | ~500 MB (foto terkompresi & PDF) | Sangat Aman |
+| **Cloudinary** | 25 Kredit / bulan (~25 GB bandwidth / penyimpanan / 25.000 transformasi) | Estimasi ±450 foto/tahun terkompresi WebP (~180 MB storage, < 2 Kredit/bulan) | Sangat Aman |
 | **Neon PostgreSQL** | 0.5 GiB storage, compute sharing | < 50 MB data teks untuk ±500 pengguna | Sangat Aman |
 | **Clerk Auth** | 10.000 Monthly Active Users (MAU) | < 200 MAU per tahun | Sangat Aman |
 | **Resend** | 100 email / hari, 3.000 email / bulan | < 20 email / hari | Sangat Aman |
@@ -199,22 +166,25 @@ Karena Cloudflare Pages Functions tidak menyediakan cron job bawaan gratis, atur
 
 ---
 
-## 7. Catatan Keputusan Arsitektur (ADR)
+## 6. Catatan Keputusan Arsitektur (ADR)
 
 ### ADR-001: Penggunaan Hono pada Cloudflare Pages Functions
 - **Konteks:** Dibutuhkan router API backend yang efisien, ringan, type-safe, dan kompatibel penuh dengan Cloudflare Workers/Pages runtime.
 - **Keputusan:** Menggunakan Hono (`hono/tiny` atau `hono`) di dalam `/functions/[[path]].ts`.
-- **Alternatif Ditolak:** Express (tidak berjalan di edge worker), Remix/Next.js (terlalu berat untuk kebutuhan KAPPAMA dan vendor-lockin hosting).
 - **Konsekuensi:** Routing API terpusat, middleware mudah di-chain, integrasi Zod validator bawaan sangat ringkas.
 
 ### ADR-002: Lazy Auto-Approval vs Cron Worker
 - **Konteks:** Syarat pendaftar otomatis berstatus `active` setelah 24 jam tanpa cron berbayar.
 - **Keputusan:** Menggunakan evaluasi lazy di fungsi `getEffectiveStatus()` pada middleware server dan query handler, lalu write-through persistence ke Neon.
-- **Alternatif Ditolak:** Menambah Cloudflare Worker berbayar atau layanan cron pihak ketiga eksternal yang rawan kegagalan sinkronisasi kredensial.
 - **Konsekuensi:** Biaya tetap Rp0, logika waktu teruji deterministik melalui unit test tanpa ketergantungan trigger background.
 
 ### ADR-003: Drizzle ORM dengan @neondatabase/serverless
 - **Konteks:** Database Neon memerlukan koneksi fleksibel yang dapat berjalan pada lingkungan serverless/edge tanpa koneksi pool stateful yang menggantung.
 - **Keputusan:** Menggunakan Drizzle ORM dipadukan dengan driver HTTP Neon (`neon()` dari `@neondatabase/serverless`).
-- **Alternatif Ditolak:** Prisma (overhead binary engine besar pada Pages Functions), raw SQL tanpa type-safety.
 - **Konsekuensi:** Startup cepat (cold start rendah), migrasi otomatis via CLI, schema type-safety di TypeScript.
+
+### ADR-004: Penggunaan Cloudinary via StorageService menggantikan Cloudflare R2 untuk v1
+- **Konteks:** Aktivasi Cloudflare R2 memerlukan penautan metode pembayaran kartu kredit/debit internasional yang saat ini belum bisa diaktifkan oleh pemilik proyek.
+- **Keputusan:** Menggunakan Cloudinary free-tier melalui antarmuka abstraksi `StorageService` dengan metode signed upload langsung dari browser klien ke Cloudinary. Database menyimpan `public_id` Cloudinary pada kolom `*_key`.
+- **Alternatif Ditolak:** Menyimpan berkas media mentah di database Neon (menghabiskan kuota database) atau memaksa R2 tanpa kartu.
+- **Konsekuensi:** Biaya tetap Rp0 tanpa butuh kartu kredit, foto otomatis mendapat optimasi CDN (`f_auto,q_auto`), dan adapter R2 tetap dapat dipasang di kemudian hari melalui `StorageService` tanpa merombak kode fitur.

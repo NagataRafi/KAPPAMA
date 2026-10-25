@@ -6,7 +6,7 @@ Dokumen ini memandu konfigurasi infrastruktur, environment variables, proses CI/
 
 ## 1. Daftar Kebutuhan Layanan (Free Tier)
 1. **Cloudflare Pages:** Hosting antarmuka Vite/React + runtime Pages Functions.
-2. **Cloudflare R2:** Bucket penyimpanan file media/gambar dan PDF AD/ART.
+2. **Cloudinary (Free Tier):** Penyimpanan foto teroptimasi via `StorageService` (Cloudflare R2 ditunda sebagai adapter cadangan).
 3. **Cloudflare Turnstile:** Proteksi bot captcha transparan.
 4. **Neon Serverless PostgreSQL:** Database cloud relasional.
 5. **Clerk:** Otentikasi identitas pengguna (Google OAuth).
@@ -16,32 +16,42 @@ Dokumen ini memandu konfigurasi infrastruktur, environment variables, proses CI/
 
 ## 2. Environment Variables & Rahasia
 
-Buat berkas `.env` lokal untuk pengembangan (dilarang commit ke git). Konfigurasikan variabel yang sama di dashboard Cloudflare Pages Settings -> Environment Variables.
+Proyek memisahkan konfigurasi frontend dan backend sesuai arsitektur Cloudflare Pages:
+- **Frontend Klien (Vite):** Disimpan di `.env` (hanya variabel berawalan `VITE_*`).
+- **Backend Server (Pages Functions):** Disimpan di `.dev.vars` untuk pengujian lokal Wrangler, dan dikonfigurasi di dashboard Cloudflare Pages Settings -> Environment Variables untuk produksi.
 
+### 2.1 File `.env` (Frontend Klien Lokal)
 ```bash
-# ==============================================================================
-# ENVIRONMENT VARIABLES - WEBSITE KAPPAMA
-# ==============================================================================
+# Database connection untuk CLI Drizzle Kit lokal
+DATABASE_URL="postgresql://<user>:<password>@<ep-pooler>.neon.tech/kappama?sslmode=require"
 
+# Clerk Publishable Key (Frontend)
+VITE_CLERK_PUBLISHABLE_KEY="pk_test_..."
+
+# Turnstile Test Sitekey (Always Passes untuk dev lokal)
+VITE_TURNSTILE_SITE_KEY="1x00000000000000000000AA"
+```
+
+### 2.2 File `.dev.vars` (Backend Pages Functions Lokal)
+```bash
 # Database (Neon PostgreSQL)
 DATABASE_URL="postgresql://<user>:<password>@<ep-pooler>.neon.tech/kappama?sslmode=require"
 
-# Clerk Authentication
-VITE_CLERK_PUBLISHABLE_KEY="pk_test_..."
+# Clerk Secret Key (Server)
 CLERK_SECRET_KEY="sk_test_..."
 
-# Cloudflare Turnstile
-VITE_TURNSTILE_SITE_KEY="0x4AAAAAA..."
-TURNSTILE_SECRET_KEY="0x4AAAAAA..."
+# Turnstile Test Secret Key (Always Passes untuk dev lokal)
+TURNSTILE_SECRET_KEY="1x0000000000000000000000000000000AA"
 
-# Cloudflare R2 Bucket Binding (Dikonfigurasi via Cloudflare Dashboard / wrangler.toml)
-# Bucket Name: kappama-media
-R2_BUCKET_NAME="kappama-media"
+# Cloudinary StorageService
+CLOUDINARY_CLOUD_NAME="your_cloud_name"
+CLOUDINARY_API_KEY="your_api_key"
+CLOUDINARY_API_SECRET="your_api_secret"
 
 # Resend Email Service
 RESEND_API_KEY="re_..."
 RESEND_FROM_EMAIL="KAPPAMA <no-reply@kappama.org>"
-EMAIL_ENABLED="false" # Ubah ke 'true' setelah domain terverifikasi di Resend
+EMAIL_ENABLED="false"
 
 # Bootstrap Akses Pengurus Inti Pertama Kali
 BOOTSTRAP_SUPER_ADMIN_EMAIL="rafi.nagata@example.com"
@@ -51,16 +61,10 @@ BOOTSTRAP_SUPER_ADMIN_EMAIL="rafi.nagata@example.com"
 
 ## 3. Langkah Konfigurasi Layanan Awal
 
-### 3.1 Setup Cloudflare Pages & R2
-1. Masuk ke dashboard Cloudflare -> **R2** -> Buat bucket baru dengan nama `kappama-media`.
-2. Masuk ke **Workers & Pages** -> **Create application** -> **Pages** -> Hubungkan repositori GitHub KAPPAMA.
-3. Konfigurasi build:
-   - Framework preset: `Vite`
-   - Build command: `pnpm build`
-   - Build output directory: `dist`
-4. Di bagian **Settings** -> **Functions** -> **R2 bucket bindings**:
-   - Variable name: `R2_STORAGE`
-   - Bucket name: `kappama-media`
+### 3.1 Setup Cloudinary
+1. Buat akun gratis di [cloudinary.com](https://cloudinary.com).
+2. Dari Dashboard Cloudinary, salin **Cloud Name**, **API Key**, dan **API Secret**.
+3. Simpan nilai ini ke `.dev.vars` (lokal) dan Cloudflare Pages Environment Variables (produksi).
 
 ### 3.2 Setup Neon PostgreSQL & Migrasi
 1. Buat proyek baru di Neon Console dengan nama `kappama-db`.
@@ -69,7 +73,6 @@ BOOTSTRAP_SUPER_ADMIN_EMAIL="rafi.nagata@example.com"
    ```bash
    pnpm db:generate
    pnpm db:migrate
-   pnpm db:seed
    ```
 
 ### 3.3 Bootstrap Super Admin Pertama
@@ -85,23 +88,11 @@ Selama Fase 1–5, aplikasi berjalan di subdomain `*.pages.dev` menggunakan Cler
 
 Ketika domain resmi KAPPAMA (misal: `kappama.org` atau `kappama.id`) telah dibeli (Fase 6), ikuti checklist migrasi berikut:
 
-- [ ] **1. Cloudflare DNS & Pages Custom Domain:**
-  - Daftarkan domain di Cloudflare Dashboard.
-  - Hubungkan domain kustom ke proyek Cloudflare Pages.
-- [ ] **2. Clerk Production Migration:**
-  - Di Clerk Dashboard, buat Production Instance.
-  - Konfigurasikan DNS CNAME records untuk Clerk Authentication di Cloudflare DNS (`clerk.kappama.org`, `accounts.kappama.org`).
-  - Ganti nilai `VITE_CLERK_PUBLISHABLE_KEY` dan `CLERK_SECRET_KEY` di Cloudflare Pages dengan kunci produksi (`pk_live_...`, `sk_live_...`).
-- [ ] **3. Resend Domain Verification:**
-  - Tambahkan domain di Resend Dashboard.
-  - Tambahkan record SPF, DKIM, dan DMARC yang diberikan Resend ke DNS Cloudflare.
-  - Setelah status terverifikasi (Verified), ubah variabel di Cloudflare Pages:
-    - `EMAIL_ENABLED="true"`
-    - `RESEND_FROM_EMAIL="KAPPAMA <halo@kappama.org>"`
-- [ ] **4. Cloudflare Turnstile:**
-  - Perbarui daftar domain terotorisasi di dashboard Turnstile agar mencakup domain kustom baru.
-- [ ] **5. Pengujian Alur Akhir:**
-  - Uji alur pendaftaran dari pendaftar nyata dan verifikasi penerimaan email notifikasi masuk ke inbox.
+- [ ] **1. Cloudflare DNS & Pages Custom Domain:** Hubungkan domain kustom ke proyek Cloudflare Pages.
+- [ ] **2. Clerk Production Migration:** Konfigurasikan CNAME di Cloudflare DNS dan perbarui ke live keys (`pk_live_...`, `sk_live_...`).
+- [ ] **3. Resend Domain Verification:** Verifikasi SPF/DKIM/DMARC di DNS Cloudflare, lalu aktifkan `EMAIL_ENABLED="true"`.
+- [ ] **4. Cloudflare Turnstile:** Ganti kunci uji dengan kunci produksi domain asli.
+- [ ] **5. Pengujian Alur Penuh:** Uji alur pendaftaran dari pendaftar nyata.
 
 ---
 
@@ -109,9 +100,5 @@ Ketika domain resmi KAPPAMA (misal: `kappama.org` atau `kappama.id`) telah dibel
 
 - **Pencadangan Database:**
   - Manfaatkan fitur point-in-time restore atau branch snapshot pada Neon Console sebelum melakukan migrasi skema mayor.
-  - Jalankan script backup manual berkala:
-    ```bash
-    pg_dump "$DATABASE_URL" -F c -b -v -f "./backup_kappama_$(date +%Y%m%d).dump"
-    ```
 - **Rollback Deployment:**
   - Jika terjadi kendala pada rilis terbaru di Cloudflare Pages, buka tab **Deployments** di dashboard Cloudflare Pages, pilih commit stabil sebelumnya, lalu klik **Rollback to this deployment**.

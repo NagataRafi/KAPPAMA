@@ -28,6 +28,7 @@ Dokumen ini memantau status fase pengerjaan proyek, daftar pertanyaan terbuka un
 4. **Alur Pendaftaran:** Disetujui 100% melalui alur: `Klik Daftar` -> `Login Google (Clerk)` -> `Onboarding Profil Lengkap` (+ Turnstile & persetujuan UU PDP). Tidak ada formulir terpisah.
 5. **Palet Warna & Aset:** Disetujui warna dasar Biru Dongker `#0F1E36` dan Emas Soga `#D97706`. Sebelum logo & foto kegiatan resmi disediakan di `docs/design-reference/`, aplikasi menggunakan placeholder berlabel `[Placeholder - Menunggu Teks/Foto Resmi Pengurus]`.
 6. **Domain Kustom:** Belum ditentukan. Selama belum ada domain kustom, aplikasi beroperasi menggunakan subdomain `pages.dev`, Clerk development instance, dan `EMAIL_ENABLED=false`. Notifikasi pendaftaran tetap dapat dipantau langsung di halaman `/status`.
+7. **Foto Profil Anggota:** Default sementara memakai avatar Google dari Clerk. Fitur unggahan foto profil mandiri anggota ditunda untuk menghemat kuota dan meminimalkan pengolahan data pribadi.
 
 ---
 
@@ -38,7 +39,7 @@ Dokumen ini memantau status fase pengerjaan proyek, daftar pertanyaan terbuka un
 | **Auto-aktif 24 jam meloloskan data palsu** | Sedang | Pembatasan pilihan kecamatan wajib di Pacitan, Turnstile bot protection, notifikasi email ke admin, dan hak admin menangguhkan (*suspend*) akun sewaktu-waktu. |
 | **Paparan Data Pribadi Mahasiswa (UU PDP)** | Tinggi | Endpoint direktori menyaring alamat sensitif, kontak memiliki saklar sembunyikan, otorisasi ketat di sisi server, pencatatan audit log untuk setiap aksi ekspor dan penyuntingan. |
 | **Keterbatasan Tanpa Domain Kustom Awal** | Rendah | Menggunakan Clerk Development Instance dan menonaktifkan pengiriman email keluar (`EMAIL_ENABLED=false`). Seluruh status pendaftaran dapat dipantau langsung di web (`/status`). |
-| **Kehabisan Kuota Free Tier (R2 / Neon / Functions)** | Rendah | Kompresi WebP di sisi klien (≤ 400KB), video hanya melalui sematan YouTube, kueri database efisien dengan indeks yang tepat. |
+| **Kehabisan Kuota Free Tier (Cloudinary / Neon / Functions)** | Rendah | Kompresi WebP di sisi klien (≤ 400KB), video hanya melalui sematan YouTube, optimasi transformasi Cloudinary (f_auto, q_auto), kueri database efisien dengan indeks yang tepat. |
 | **Pergantian Pengurus Tiap Periode** | Sedang | Prosedur serah terima hak akses terdokumentasi rapi di `deployment.md` dan `security-privacy.md`, mewajibkan minimal ada 1 Super Admin aktif setiap saat. |
 
 ---

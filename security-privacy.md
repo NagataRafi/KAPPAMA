@@ -30,6 +30,7 @@ Sebagai organisasi yang memproses data pribadi mahasiswa dan pelajar, KAPPAMA me
 | **Cross-Site Scripting (XSS)** | Penyusupan script melalui deskripsi teks kaya proker atau profil | Sanitasi HTML ketat di server (whitelist tag aman: `p`, `b`, `i`, `ul`, `ol`, `li`, `h2`, `h3`, `a`); CSP ketat melalui Cloudflare `_headers` |
 | **Data Exfiltration oleh Pihak Ketiga** | Kebocoran data direktori | Seluruh endpoint direktori `/api/members/*` mewajibkan token JWT Clerk dengan status keanggotaan `active`; pencarian tidak diindeks mesin pencari (`robots.txt: Disallow /anggota/`, `noindex`) |
 | **Penyalahgunaan Akun Admin** | Admin mengekspor atau menyunting data tanpa tanggung jawab | Setiap aktivitas ekspor data, persetujuan, penolakan, penangguhan (*suspend*), dan perubahan peran dicatat permanen di `audit_logs` |
+| **Penyusupan Berkas Unggahan** | Unggahan malware / eksekusi skrip berbahaya lewat file gambar | Validasi MIME type & ekstensi gambar; upload menggunakan direct signed upload Cloudinary berumur pendek yang dibatasi folder dan ukuran; `CLOUDINARY_API_SECRET` tersimpan aman di server dan tidak pernah terekspos ke klien |
 
 ---
 
