@@ -1,0 +1,13 @@
+{
+  "version": "5",
+  "dialect": "pg",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1792915863915,
+      "tag": "0000_solid_talos",
+      "breakpoints": true
+    }
+  ]
+}

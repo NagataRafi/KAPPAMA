@@ -12,6 +12,7 @@ node_modules
 dist
 dist-ssr
 *.local
+_tmp_*
 
 # Environment variables & secrets
 .env

@@ -7,10 +7,20 @@ Format ini mengacu pada [Keep a Changelog](https://keepachangelog.com/id/1.1.0/)
 
 ## [Unreleased]
 ### Direncanakan
-- Inisialisasi scaffold proyek React + Vite + TypeScript + Tailwind CSS (Fase 1).
-- Integrasi Cloudflare Pages Functions dengan router API Hono.
-- Skema database Drizzle ORM dan koneksi Neon PostgreSQL.
-- Setup autentikasi Clerk (Development instance) dan konfigurasi binding Cloudflare R2.
+- Fase 2: Implementasi Design System lengkap, tata letak publik, Beranda, 4 sub-menu Profil, Program Kerja, dan Galeri.
+
+---
+
+## [0.2.0] - 2026-10-25
+### Ditambahkan
+- Scaffold proyek Vite + React 18 + TypeScript + Tailwind CSS.
+- Cloudflare Pages Functions (`/functions/[[path]].ts`) dengan Hono API router dan endpoint `/api/health`.
+- Skema database 17 tabel Drizzle ORM (`db/schema.ts`) dan generasi migrasi SQL perdana (`db/migrations/0000_solid_talos.sql`).
+- Utilitas `getEffectiveStatus()` beserta unit test Vitest lengkap (100% lulus untuk skenario 23:59, 24:00, 24:01, rejected, resubmit).
+- Skema validasi Zod onboarding (`shared/schema/member-schema.ts`) dan interface TypeScript (`shared/types/index.ts`).
+- Konfigurasi Cloudflare Pages R2 binding di `wrangler.toml`.
+- Setup pipeline CI GitHub Actions (`.github/workflows/ci.yml`).
+- Berkas master data wilayah Pacitan (`db/seed/pacitan-districts.json`).
 
 ---
 

@@ -1,0 +1,12 @@
+name = "kappama-web"
+compatibility_date = "2024-01-01"
+pages_build_output_dir = "dist"
+
+# Binding Cloudflare R2
+[[r2_buckets]]
+binding = "R2_STORAGE"
+bucket_name = "kappama-media"
+
+# Variabel Lingkungan Default
+[vars]
+EMAIL_ENABLED = "false"

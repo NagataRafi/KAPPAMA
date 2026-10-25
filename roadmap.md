@@ -8,9 +8,9 @@ Dokumen ini memantau status fase pengerjaan proyek, daftar pertanyaan terbuka un
 
 | Fase | Deskripsi | Status | Keterangan / Capaian |
 |:---:|---|:---:|---|
-| **Fase 0** | **Fondasi Dokumen & Penyelarasan PRD** | 🟡 Menunggu Persetujuan | Seluruh dokumen Bagian 14 telah dibuat konkret dan siap ditinjau pemilik proyek. |
-| **Fase 1** | **Scaffold & Infrastruktur Dasar** | ⚪ Belum Dimulai | Repo Vite+React+TS, Hono Pages Functions, Neon DB, Drizzle, Clerk dev instance. |
-| **Fase 2** | **Desain Sistem & Halaman Publik** | ⚪ Belum Dimulai | Beranda, Profil (Tentang, Visi-Misi, Struktur, AD/ART), Program Kerja, Galeri. |
+| **Fase 0** | **Fondasi Dokumen & Penyelarasan PRD** | 🟢 Selesai | Seluruh dokumen Bagian 14 telah disetujui pemilik proyek dan jawaban terbuka telah disepakati. |
+| **Fase 1** | **Scaffold & Infrastruktur Dasar** | 🟢 Selesai | Vite+React+TS, Hono Pages Functions, Drizzle ORM skema 17 tabel & migrasi, Vitest 100% lulus, CI workflow. |
+| **Fase 2** | **Desain Sistem & Halaman Publik** | 🟡 Siap Dimulai | Beranda, Profil (Tentang, Visi-Misi, Struktur, AD/ART), Program Kerja, Galeri. |
 | **Fase 3** | **Auth, Onboarding, Persetujuan, & Direktori** | ⚪ Belum Dimulai | Google Auth, Turnstile, Onboarding, Lazy auto-approve 24 jam, Direktori internal. |
 | **Fase 4** | **Panel Admin & Manajemen Organisasi** | ⚪ Belum Dimulai | CRUD Konten, Antrean persetujuan, Manajemen anggota & peran, Statistik, Ekspor data. |
 | **Fase 5** | **Hardening, Aksesibilitas, & Kesiapan Rilis** | ⚪ Belum Dimulai | Audit keamanan, E2E testing, uji batas waktu, optimasi Lighthouse mobile. |
@@ -20,25 +20,14 @@ Dokumen ini memantau status fase pengerjaan proyek, daftar pertanyaan terbuka un
 
 ---
 
-## 2. Pertanyaan Terbuka untuk Pemilik Proyek (Batch Fase 0)
+## 2. Kesepakatan Pertanyaan Terbuka (Dikonfirmasi Pemilik Proyek)
 
-Berikut daftar pertanyaan terbuka yang disalin dari PRD Bagian 16 untuk dikonfirmasi bersama pemilik proyek:
-
-1. **Definisi "Angkatan":**
-   Apakah field "Angkatan" dipahami sebagai tahun masuk kuliah (misal: 2024) atau tahun angkatan pengukuhan anggota di KAPPAMA? *(Default asumsi yang diusulkan: Tahun masuk kuliah).*
-2. **Visibilitas Default Direktori:**
-   Apakah kebijakan visibilitas berikut disetujui:
-   - Detail alamat lengkap (RT/RW/Dusun) hanya bisa dilihat pemilik data dan pengurus (Admin Konten / Super Admin).
-   - Nomor WhatsApp dan Email terlihat oleh sesama anggota berstatus `active`, namun anggota memiliki opsi saklar *"Sembunyikan kontak saya"*?
-3. **Filter "Universitas" pada Halaman Program Kerja:**
-   Apakah filter kampus pada Program Kerja relevan digunakan (sebagai label opsional proker kolaborasi antar-kampus), ataukah cukup difokuskan pada Direktori Anggota saja?
-4. **Alur Pendaftaran Anggota Baru:**
-   Apakah pendaftaran dilakukan 100% melalui alur: Klik Daftar -> Login Google via Clerk -> Formulir Onboarding Data Diri (seperti rancangan saat ini), atau apakah perlu ada formulir pra-pendaftaran terpisah sebelum login Google?
-5. **Aset Visual & Identitas Desain:**
-   - Apakah palet warna Biru Dongker (`#0F1E36`) dan Emas Soga (`#D97706`) sudah sesuai dengan identitas KAPPAMA?
-   - Kapan logo resmi KAPPAMA beresolusi tinggi dan foto/dokumentasi kegiatan dapat disediakan?
-6. **Rencana Domain Kustom:**
-   Apakah sudah ada estimasi nama domain yang akan dibeli (misal: `kappama.org` / `kappama.id`) dan perkiraan jadwal pembeliannya untuk pelaksanaan Fase 6?
+1. **Definisi "Angkatan":** Disepakati sebagai **tahun masuk kuliah** (format YYYY, misal: 2024).
+2. **Visibilitas Direktori:** Disetujui bahwa detail alamat (`dusun/RT/RW/jalan`) **hanya** terlihat oleh pemilik data, Admin Konten, dan Super Admin. WhatsApp dan email tampil untuk sesama anggota `active`, dengan opsi saklar *"sembunyikan kontak saya"*.
+3. **Filter Kampus di Program Kerja:** Dipertahankan sebagai label opsional bersama filter tahun pelaksanaan.
+4. **Alur Pendaftaran:** Disetujui 100% melalui alur: `Klik Daftar` -> `Login Google (Clerk)` -> `Onboarding Profil Lengkap` (+ Turnstile & persetujuan UU PDP). Tidak ada formulir terpisah.
+5. **Palet Warna & Aset:** Disetujui warna dasar Biru Dongker `#0F1E36` dan Emas Soga `#D97706`. Sebelum logo & foto kegiatan resmi disediakan di `docs/design-reference/`, aplikasi menggunakan placeholder berlabel `[Placeholder - Menunggu Teks/Foto Resmi Pengurus]`.
+6. **Domain Kustom:** Belum ditentukan. Selama belum ada domain kustom, aplikasi beroperasi menggunakan subdomain `pages.dev`, Clerk development instance, dan `EMAIL_ENABLED=false`. Notifikasi pendaftaran tetap dapat dipantau langsung di halaman `/status`.
 
 ---
 
