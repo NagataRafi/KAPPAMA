@@ -7,7 +7,28 @@ Format ini mengacu pada [Keep a Changelog](https://keepachangelog.com/id/1.1.0/)
 
 ## [Unreleased]
 ### Direncanakan
-- Fase 2: Implementasi Design System lengkap, tata letak publik, Beranda, 4 sub-menu Profil, Program Kerja, dan Galeri.
+- Fase 3: Otentikasi Clerk Google Login, formulir Onboarding profil lengkap dengan proteksi Turnstile, logika Lazy Auto-Approve 24 jam di server, dan Direktori Anggota & Alumni.
+
+---
+
+## [0.3.0] - 2026-10-25
+### Ditambahkan
+- Implementasi penuh Fase 2 (Desain Sistem & Seluruh Halaman Publik):
+  - Komponen navigasi Navbar sticky dengan dropdown 4 sub-menu Profil, drawer menu mobile responsif (360px), dan status auth.
+  - Komponen Footer multi-kolom dengan informasi organisasi, navigasi cepat, kontak placeholder, dan kepatuhan UU PDP.
+  - Halaman Beranda (`/`) memetakan layout referensi: Hero layar penuh, kartu melayang statistik & tautan cepat, 4 pilar keunggulan, kartu program kerja unggulan, seksi kilas galeri, dan banner CTA pendaftaran.
+  - Halaman Profil Tentang KAPPAMA (`/profil`) dengan definisi resmi PRD, sejarah placeholder, dan kontak sekretariat.
+  - Halaman Visi & Misi (`/profil/visi-misi`) dengan kartu visi dan 4 langkah misi.
+  - Halaman Struktur Organisasi (`/profil/struktur`) dengan pemilih periode dinamis dan 4 jabatan inti (Pembina, Penasihat, Ketua Umum, Wakil Ketua Umum).
+  - Halaman AD/ART (`/profil/ad-art`) dengan viewer PDF tertanam, tombol unduh langsung, tombol buka di tab baru, dan arsip riwayat versi.
+  - Halaman Program Kerja (`/program-kerja` & `/program-kerja/:slug`) dengan filter tahun, filter kampus mitra, pencarian judul, dokumentasi foto, dan sematan video YouTube `youtube-nocookie.com`.
+  - Halaman Galeri Kegiatan (`/galeri` & `/galeri/:slug`) dengan filter tahun, album kegiatan, dan modal lightbox foto.
+  - Halaman Pendaftaran Publik (`/daftar`) dengan syarat 12 kecamatan Pacitan, alur 3 langkah pendaftaran, dan tombol aksi.
+  - Halaman Kebijakan Privasi (`/kebijakan-privasi`) dan Syarat Penggunaan (`/syarat-penggunaan`) bertanda draf menunggu tinjauan resmi pengurus.
+  - Halaman 404 ramah pengguna (`/404`).
+  - Komponen ornamen halus motif batik pesisir khas Pacitan (Batik Pace) SVG (`BatikOrnament`).
+  - Komponen UI state: `EmptyState` dan `LoadingSkeleton`.
+  - Berkas dummy PDF AD/ART di `public/docs/ad-art-kappama-sample.pdf`.
 
 ---
 

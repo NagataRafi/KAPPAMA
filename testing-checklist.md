@@ -71,10 +71,24 @@ Dokumen ini memuat skenario pengujian komprehensif per fitur, per peran pengguna
 
 ## 5. Pengujian Responsivitas & Kinerja Mobile
 
-- [ ] Buka semua halaman publik pada viewport 360px (lebar layar smartphone kecil). Pastikan tidak ada horizontal scrollbar liar (*overflow-x*).
-- [ ] Navbar mobile: Menu hamburger responsif, mudah ditutup, dan link navigasi dapat diklik tanpa tumpang tindih.
-- [ ] PDF Viewer AD/ART: Tampil tertanam atau menampilkan tombol alternatif unduh langsung di peramban mobile (iOS Safari & Android Chrome).
-- [ ] Lighthouse Mobile Audit:
-  - Skor Performance ≥ 85
-  - Skor Accessibility ≥ 90
-  - Skor SEO ≥ 90
+- [x] Buka semua halaman publik pada viewport 360px (lebar layar smartphone kecil). Pastikan tidak ada horizontal scrollbar liar (*overflow-x*).
+- [x] Navbar mobile: Menu hamburger responsif, mudah ditutup, dan link navigasi dapat diklik tanpa tumpang tindih.
+- [x] PDF Viewer AD/ART: Tampil tertanam atau menampilkan tombol alternatif unduh langsung di peramban mobile (iOS Safari & Android Chrome).
+- [x] Sematan video YouTube menggunakan domain `youtube-nocookie.com` dengan atribut `loading="lazy"`.
+- [x] Seluruh teks narasi pengurus dan foto bertanda `[Placeholder - Menunggu Teks/Foto Resmi Pengurus]`.
+- [ ] Lighthouse Mobile Audit (Target: Performance ≥ 85, Accessibility ≥ 90, SEO ≥ 90).
+
+---
+
+## 6. Verifikasi Modul Halaman Publik (Fase 2)
+- [x] **Beranda (`/`):** Hero section, quick links card, 4 pilar keunggulan, proker unggulan, kilas galeri, CTA banner, footer multi-kolom.
+- [x] **Profil (`/profil`):** Definisi organisasi resmi PRD, sejarah placeholder, kontak sekretariat.
+- [x] **Visi & Misi (`/profil/visi-misi`):** Pernyataan visi dan 4 butir misi terstruktur.
+- [x] **Struktur Organisasi (`/profil/struktur`):** Filter/pemilih periode (2026/2027 dan 2025/2026), 4 jabatan inti (Pembina, Penasihat, Ketua, Wakil Ketua Umum).
+- [x] **AD / ART (`/profil/ad-art`):** Penampil dokumen PDF tertanam (`<object>`), tombol unduh, tombol buka di tab baru, arsip riwayat versi.
+- [x] **Program Kerja (`/program-kerja`):** Pencarian teks, filter tahun, filter universitas mitra, kartu responsif, empty state.
+- [x] **Detail Program Kerja (`/program-kerja/:slug`):** Deskripsi rinci, tujuan, sasaran peserta, penanggung jawab, galeri foto, video YouTube.
+- [x] **Galeri (`/galeri` & `/galeri/:slug`):** Grid album per tahun, jumlah foto, lightbox modal pratinjau foto, video aftermovie.
+- [x] **Pendaftaran (`/daftar`):** Ringkasan syarat 12 kecamatan Pacitan, alur 3 langkah, tombol pendaftaran Google.
+- [x] **Kebijakan Privasi & Syarat Penggunaan:** Kepatuhan UU PDP No. 27/2022, ditandai draf menunggu tinjauan pengurus.
+- [x] **Halaman 404:** Tampilan error route ramah pengguna dengan tombol kembali ke beranda.
