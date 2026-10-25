@@ -4,7 +4,7 @@
 > Baca seluruh dokumen sebelum menulis kode. Jika ada konflik antara dokumen ini dan asumsi Anda, dokumen ini menang.
 > Jika ada hal yang tidak jelas, catat di bagian "Pertanyaan Terbuka" pada `roadmap.md` dan tanyakan ke pemilik proyek, jangan menebak untuk hal yang menyangkut data pribadi, keamanan, atau biaya.
 
-Versi dokumen: 1.1 (revisi: Admin Konten kini dapat menyetujui/menolak pendaftar dan menyunting/menonaktifkan data anggota) · Tanggal: 25 Oktober 2026 · Pemilik proyek: Muhammad Rafi Nagata Afendi
+Versi dokumen: 1.2 (revisi 1.1: Admin Konten dapat menyetujui/menolak pendaftar dan menyunting/menonaktifkan data anggota; revisi 1.2: penyimpanan gambar memakai Cloudinary lewat `StorageService`, Cloudflare R2 ditunda karena aktivasinya terkendala metode pembayaran) · Tanggal: 25 Oktober 2026 · Pemilik proyek: Muhammad Rafi Nagata Afendi
 
 ---
 
@@ -13,7 +13,7 @@ Versi dokumen: 1.1 (revisi: Admin Konten kini dapat menyetujui/menolak pendaftar
 1. **Mulai dari dokumentasi.** Sebelum membuat kode aplikasi, buat file dokumen pada Bagian 14 di root repositori (kecuali dinyatakan lain). Isi awalnya harus diturunkan dari PRD ini, bukan template kosong.
 2. **Bekerja per fase** sesuai Bagian 15. Jangan melompat fase. Setiap akhir fase: perbarui `changelog.md`, `roadmap.md`, dan jalankan `testing-checklist.md` untuk fase tersebut.
 3. **Bahasa:** seluruh antarmuka pengguna dan konten dalam **Bahasa Indonesia**. Nama variabel, kode, dan nama tabel dalam bahasa Inggris. Dokumen `.md` ditulis dalam Bahasa Indonesia.
-4. **Jangan menyimpan rahasia di repositori.** Semua kunci (Clerk, Neon, Resend, R2, Turnstile) lewat environment variable. Buat `.env.example` tanpa nilai asli.
+4. **Jangan menyimpan rahasia di repositori.** Semua kunci (Clerk, Neon, Resend, Cloudinary, Turnstile) lewat environment variable. Buat `.env.example` tanpa nilai asli.
 5. **Jangan menambah layanan berbayar** atau melampaui batas gratis tanpa persetujuan pemilik proyek.
 6. **Setiap keputusan teknis penting** dicatat di `arsitektur.md` bagian "Catatan Keputusan" (apa, kenapa, alternatif yang ditolak).
 7. **Data pribadi** diperlakukan sesuai Bagian 10 dan `security-privacy.md`. Jangan pernah menaruh data anggota asli di repositori, contoh, atau log. Gunakan data dummy untuk seed.
@@ -118,7 +118,7 @@ Layanan yang **sudah ditetapkan pemilik proyek** (jangan diganti):
 | Database | Neon (PostgreSQL) |
 | Autentikasi | Clerk (login Google) |
 | Email | Resend |
-| Penyimpanan file/gambar | Cloudflare R2 |
+| Penyimpanan gambar | Cloudinary (paket Free), diakses lewat antarmuka `StorageService`. Cloudflare R2 ditunda sebagai adapter alternatif (lihat 5.1 butir 5) |
 | Verifikasi bukan robot | Cloudflare Turnstile (dan proteksi bot bawaan Clerk) |
 
 Pilihan teknis yang **diusulkan** (agen boleh mengusulkan perubahan beralasan lewat `arsitektur.md`, tetapi harus tetap muat di tier gratis dan deployable ke Cloudflare Pages):
@@ -128,7 +128,7 @@ Pilihan teknis yang **diusulkan** (agen boleh mengusulkan perubahan beralasan le
 - **ORM/Migrasi:** Drizzle ORM + `@neondatabase/serverless` (driver HTTP/WebSocket yang cocok untuk edge).
 - **Validasi:** Zod (skema dibagi pakai bersama antara frontend dan backend).
 - **Auth di server:** verifikasi token sesi Clerk di setiap request ber-otorisasi (`@clerk/backend`).
-- **Penyimpanan file:** binding R2 pada Pages Functions. File disajikan lewat route `/media/*` (Function dengan cache header) selama belum ada domain kustom; jangan memakai URL `r2.dev` untuk produksi.
+- **Penyimpanan gambar:** Cloudinary. Unggahan dari Admin memakai **signed upload**: Function memverifikasi peran Admin, membuat signature dengan `CLOUDINARY_API_SECRET` (rahasia, hanya di server), lalu klien mengirim berkas langsung ke Cloudinary. Gambar disajikan dari CDN Cloudinary dengan transformasi otomatis (`f_auto,q_auto`, lebar sesuai layar). Semua akses lewat `StorageService` (metode: buat signature unggah, bangun URL, hapus) dengan adapter `CloudinaryStorage` dan adapter lokal/mock untuk pengembangan. Adapter R2 boleh ditambahkan nanti tanpa mengubah kode fitur.
 - **Email:** Resend SDK/REST dari Function.
 - **Linting/format/test:** ESLint, Prettier, Vitest (unit), Playwright (E2E ringan untuk alur kritis).
 - **Manajer paket:** pnpm.
@@ -141,8 +141,14 @@ Pilihan teknis yang **diusulkan** (agen boleh mengusulkan perubahan beralasan le
    - Selama email belum aktif, notifikasi status pendaftaran harus tetap terlihat **di dalam aplikasi** (halaman status).
    - Migrasi ke Clerk production + domain kustom didokumentasikan di `deployment.md` sebagai checklist tersendiri.
 2. **Cron/penjadwalan:** Pages Functions tidak mendukung Cron Trigger. Aturan "otomatis aktif setelah 24 jam" harus dihitung **secara lazy** di server (lihat Bagian 7). Worker terpisah dengan Cron boleh ditambahkan sebagai pelengkap (misalnya untuk mengirim email), bukan sebagai satu-satunya mekanisme.
-3. **Kuota gratis:** pantau batas Neon (penyimpanan dan jam komputasi), R2 (10 GB), Resend (100 email/hari, 3.000/bulan), Pages Functions (request harian). Dokumentasikan perkiraan pemakaian di `arsitektur.md`.
+3. **Kuota gratis:** pantau batas Neon (penyimpanan dan jam komputasi), Cloudinary (25 kredit/bulan sebagai satu kuota bersama untuk penyimpanan, bandwidth, dan transformasi; penyimpanan juga menghitung salinan hasil transformasi), Resend (100 email/hari, 3.000/bulan), Pages Functions (request harian). Dokumentasikan perkiraan pemakaian di `arsitektur.md`.
 4. Neon bisa "tidur" saat idle sehingga request pertama lambat; tangani dengan skeleton/loading state yang baik dan jangan menganggapnya error.
+5. **Penyimpanan (revisi 1.2):** aktivasi R2 butuh metode pembayaran yang belum bisa disambungkan pemilik proyek, jadi v1 memakai Cloudinary.
+   - Variabel lingkungan: `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` (rahasia). Hapus `R2_BUCKET_NAME` dari `.env.example` dan `wrangler.toml`; binding R2 boleh dihapus sampai adapter R2 benar-benar dipakai.
+   - Simpan **`public_id` Cloudinary** (bukan URL penuh) di kolom `*_key`; URL dibangun lewat `StorageService` agar penyimpanan bisa dipindah nanti.
+   - **PDF AD/ART:** pengiriman PDF dari akun Cloudinary gratis belum terverifikasi dan mungkin diblokir secara bawaan oleh setelan keamanan akun. Agen harus mengujinya pada Fase 2/4. Jika tidak bisa diaktifkan, pakai cadangan: berkas statis di `public/` (diganti lewat deploy) atau tautan PDF dari Google Drive, tanpa mengubah antarmuka admin.
+   - Hitung estimasi pemakaian kredit di `arsitektur.md` (perkiraan awal: ±450 foto per tahun × ±400 KB masih jauh di bawah kuota).
+   - Pantau kuota dan jangan melewati batas gratis tanpa persetujuan pemilik proyek.
 
 ---
 
@@ -171,7 +177,7 @@ Aturan:
 - **Detail program kerja:** judul, tahun/periode, tanggal dan lokasi, deskripsi rinci (teks kaya ringan), tujuan, sasaran, penanggung jawab (teks), galeri foto program (lightbox), dan **video YouTube** (satu atau lebih, disematkan lewat URL/ID).
 - **Admin Konten** (dan Super Admin) membuat, mengubah, menghapus (soft delete), dan mengatur status *draft/terbit*.
 - Upload foto: lihat batas pada Bagian 10.
-- Video **hanya tautan YouTube** (validasi URL, simpan video ID, sematkan dengan `youtube-nocookie.com`, lazy-load). Tidak ada unggah video ke R2.
+- Video **hanya tautan YouTube** (validasi URL, simpan video ID, sematkan dengan `youtube-nocookie.com`, lazy-load). Tidak ada unggah video ke penyimpanan gambar.
 
 ### F3. Direktori Anggota & Alumni (khusus login, status `active`)
 
@@ -298,6 +304,7 @@ Entitas inti (nama tabel dalam bahasa Inggris, snake_case, `uuid` sebagai PK, `c
 - `export_logs` (boleh digabung ke audit_logs)
 
 Aturan data:
+- Kolom `*_key` (photo_key, logo_key, file_key, cover_key) menyimpan `public_id` Cloudinary (atau path berkas statis bila memakai cadangan PDF), bukan URL penuh.
 - Indeks pada: `member_profiles(status, member_type)`, `(university_id)`, `(cohort_year)`, `(district_id)`, `username`, dan pencarian nama (trigram/`ILIKE` cukup untuk skala ini).
 - Soft delete untuk anggota dan konten; hapus permanen hanya oleh Super Admin dengan konfirmasi.
 - Migrasi lewat Drizzle, tersimpan di repositori, dapat dijalankan ulang.
@@ -322,7 +329,7 @@ Aturan data:
 - Validasi semua input dengan Zod di server; escape/sanitasi konten teks kaya (whitelist tag; cegah XSS).
 - Turnstile diverifikasi di server pada onboarding dan formulir publik lain.
 - Rate limiting pada endpoint sensitif (onboarding, unggah, ekspor, pencarian direktori).
-- Unggahan file: validasi tipe MIME dan ekstensi, batas ukuran, nama file di-generate (UUID), tidak mempercayai nama dari klien.
+- Unggahan file: hanya Admin Konten/Super Admin yang dapat meminta signature unggah; signature berumur singkat dan dibatasi ke folder (`kappama/<jenis>/`), tipe berkas, dan ukuran; validasi tipe MIME dan ekstensi; `public_id` di-generate (UUID), tidak mempercayai nama dari klien. `CLOUDINARY_API_SECRET` tidak pernah dikirim ke klien.
 - Header keamanan (CSP, X-Content-Type-Options, Referrer-Policy, frame-ancestors) melalui `_headers`; sematan YouTube diizinkan lewat CSP.
 - Tidak ada data anggota pada respons API publik, sitemap, atau log. Log tidak boleh memuat WA/email/alamat.
 - Pencegahan IDOR: akses data anggota selalu diperiksa terhadap peran dan status pemohon.
@@ -339,11 +346,11 @@ Aturan data:
 - Maksimal 30 foto per program dan 60 foto per album.
 - Foto profil: maks 2 MB, dipotong persegi.
 - PDF AD/ART: maks 10 MB.
-- Hitung estimasi total penyimpanan R2 dan tulis di `arsitektur.md`.
+- Hitung estimasi pemakaian kredit Cloudinary (penyimpanan + bandwidth + transformasi) dan tulis di `arsitektur.md`.
 
 ### 10.4 Performa
 - Halaman publik ringan: gambar responsif (`srcset`), lazy-loading, font terbatas, kode ter-split per route.
-- Cache header untuk `/media/*` dan aset statis.
+- Gambar disajikan dari CDN Cloudinary dengan `f_auto,q_auto` dan lebar sesuai layar; cache header untuk aset statis. Gambar statis bawaan situs (hero, logo, ornamen) boleh ditaruh di `public/`.
 - Target: LCP < 2,5 detik pada jaringan 4G.
 
 ### 10.5 Aksesibilitas dan SEO
@@ -437,14 +444,14 @@ Buat di **root repositori** (kecuali `docs/` bila dinyatakan). Isi harus konkret
 | File | Isi minimum |
 |---|---|
 | `tujuan.md` | Latar belakang KAPPAMA, tujuan produk, pengguna sasaran, indikator keberhasilan, prinsip produk, apa yang sengaja *tidak* dikerjakan |
-| `arsitektur.md` | Diagram arsitektur (Mermaid), alur request, struktur folder, alur autentikasi dan otorisasi, alur unggah ke R2, logika lazy auto-approve, estimasi kuota layanan gratis, **Catatan Keputusan** (ADR ringkas) |
+| `arsitektur.md` | Diagram arsitektur (Mermaid), alur request, struktur folder, alur autentikasi dan otorisasi, alur signed upload ke Cloudinary, logika lazy auto-approve, estimasi kuota layanan gratis, **Catatan Keputusan** (ADR ringkas) |
 | `agents.md` | Panduan untuk agen AI: gambaran proyek, perintah penting (install/dev/test/build/migrate/deploy), konvensi kode dan penamaan, struktur folder, aturan keamanan/privasi, hal yang dilarang, cara menjalankan test, definisi selesai. Jika alat agen mengharapkan nama `AGENTS.md`, sediakan salinan/tautan dengan nama itu agar kedua alat (Antigravity dan OpenCode) membacanya |
 | `changelog.md` | Format Keep a Changelog + SemVer; entri awal `0.1.0` (dokumentasi dan scaffold); diperbarui tiap fase/fitur |
 | `database-schema.md` | ERD (Mermaid), tabel dan kolom lengkap, indeks, relasi, aturan soft delete, sumber dan tanggal data wilayah, strategi migrasi dan seed |
 | `api-spec.md` | Daftar endpoint, metode, peran yang diizinkan, skema request/response (Zod), kode error, contoh |
 | `design-system.md` | Token warna (navy + aksen), tipografi, spasi, radius, bayangan, komponen, pola ornamen batik, aturan gambar, state UI, aksesibilitas, pemetaan referensi desain pada Bagian 11.2 |
 | `security-privacy.md` | Model ancaman ringkas, kontrol keamanan, matriks akses, penanganan data pribadi (UU PDP), persetujuan, retensi, hak pengguna, serah terima pengurus, risiko auto-aktif 24 jam, prosedur insiden |
-| `deployment.md` | Pembuatan proyek Cloudflare Pages, binding R2, koneksi Neon, setup Clerk (dev → prod), Turnstile, Resend, daftar environment variable, bootstrap Super Admin, migrasi database, **checklist migrasi ke domain kustom**, backup/restore, rollback |
+| `deployment.md` | Pembuatan proyek Cloudflare Pages, akun dan kredensial Cloudinary, koneksi Neon, setup Clerk (dev → prod), Turnstile, Resend, daftar environment variable, bootstrap Super Admin, migrasi database, **checklist migrasi ke domain kustom**, backup/restore, rollback |
 | `testing-checklist.md` | Checklist per fitur dan per peran (uji akses terlarang, uji batas 24 jam, uji unggahan, uji mobile), skenario E2E, uji keamanan dasar, uji aksesibilitas dan performa |
 | `roadmap.md` | Fase dan status, backlog v2 (lowongan alumni, donasi, berita), **Pertanyaan Terbuka**, risiko |
 
@@ -457,10 +464,10 @@ Tambahan yang diperbolehkan jika berguna: `README.md` (ringkas, cara menjalankan
 | Fase | Cakupan | Selesai bila |
 |---|---|---|
 | **0 — Fondasi dokumen** | Semua file Bagian 14 dibuat dan konsisten; konfirmasi Pertanyaan Terbuka dengan pemilik proyek | Pemilik proyek menyetujui dokumen |
-| **1 — Scaffold & infrastruktur** | Repo, Vite+React+TS+Tailwind, Pages Functions, koneksi Neon + Drizzle + migrasi awal, Clerk dev, R2 binding, CI dasar, deploy pertama ke `*.pages.dev` | Halaman kosong ter-deploy, `/api/health` berjalan, DB terhubung |
+| **1 — Scaffold & infrastruktur** | Repo, Vite+React+TS+Tailwind, Pages Functions, koneksi Neon + Drizzle + migrasi awal, Clerk dev, `StorageService` (adapter Cloudinary + mock), CI dasar, deploy pertama ke `*.pages.dev` | Halaman kosong ter-deploy, `/api/health` berjalan, DB terhubung |
 | **2 — Desain & halaman publik** | Design system, layout, Beranda, Profil (4 sub-menu), Program Kerja, Galeri (dengan data dummy/admin) | Semua halaman publik sesuai desain, responsif, lolos target Lighthouse |
 | **3 — Auth, onboarding, direktori** | Login Google, onboarding + Turnstile, status, alur persetujuan + lazy 24 jam, direktori + filter, Profil Saya, aktif→alumni | Alur uji penuh dari daftar sampai tampil di direktori berhasil; uji batas waktu lulus |
-| **4 — Panel admin** | CRUD konten, unggah R2, antrean persetujuan, manajemen anggota & peran, statistik, ekspor, master data, audit log | Semua hak akses pada matriks Bagian 3.2 terbukti lewat uji |
+| **4 — Panel admin** | CRUD konten, unggah Cloudinary (uji juga PDF AD/ART), antrean persetujuan, manajemen anggota & peran, statistik, ekspor, master data, audit log | Semua hak akses pada matriks Bagian 3.2 terbukti lewat uji |
 | **5 — Hardening & rilis** | Keamanan, privasi (kebijakan, hapus/ekspor data), performa, aksesibilitas, SEO, uji E2E, dokumentasi final | `testing-checklist.md` hijau; pemilik proyek menyetujui rilis |
 | **6 — Domain & email** | Beli domain, Clerk production, verifikasi domain Resend, aktifkan `EMAIL_ENABLED` | Email notifikasi berfungsi ke anggota nyata |
 
@@ -474,19 +481,20 @@ Definisi selesai untuk setiap fitur: kode ter-lint, tipe aman, test relevan lulu
 1. Auto-aktif 24 jam membuka direktori tanpa verifikasi manusia → mitigasi: tinjauan rutin, rate limit, pembatasan kecamatan Pacitan, kemampuan suspend.
 2. Data pribadi pelajar (termasuk alamat dan WA) → mitigasi: akses login saja, alamat detail hanya untuk pemilik dan admin, UU PDP, audit ekspor dan audit akses/penyuntingan oleh admin. Karena Admin Konten kini juga menyentuh data pribadi, jumlah akun admin dijaga sedikit dan setiap admin menyetujui pernyataan kerahasiaan data.
 3. Tanpa domain, Clerk production dan email anggota belum bisa dipakai → mitigasi: Fase 6 dan flag email.
-4. Kuota gratis habis (R2/Neon/Functions) → mitigasi: kompres gambar, video lewat YouTube, pantau pemakaian.
+4. Kuota gratis habis (Cloudinary/Neon/Functions) → mitigasi: kompres gambar, video lewat YouTube, pantau pemakaian.
 5. Pergantian pengurus tiap periode → mitigasi: dokumentasi serah terima, minimal dua Super Admin.
 6. Konten (foto, logo, motif) berhak cipta → mitigasi: hanya aset milik/izin KAPPAMA.
 
 **Pertanyaan terbuka (agen wajib menanyakan ke pemilik proyek pada Fase 0)**
-1. "Angkatan" berarti tahun masuk kuliah atau angkatan keanggotaan KAPPAMA?
-2. Apakah visibilitas default direktori (alamat detail disembunyikan; WA/email dengan saklar sembunyikan) disetujui?
+1. (Terjawab) "Angkatan" = tahun masuk kuliah (format YYYY).
+2. (Terjawab) Visibilitas default disetujui: alamat detail hanya untuk pemilik dan admin; WA/email tampil ke anggota `active` dengan saklar sembunyikan.
 3. (Terjawab, v1.1) Admin Konten dan Super Admin sama-sama berhak menyetujui/menolak pendaftar serta menyunting/menonaktifkan data anggota mana pun.
-4. Filter "universitas" pada Program Kerja: apakah relevan (label opsional) atau cukup untuk direktori saja?
-5. "Pendaftaran anggota baru" sama dengan alur login + onboarding (default), atau ada formulir terpisah untuk calon anggota yang belum punya akun?
-6. Kode warna biru dongker dan aksen final, logo resmi, serta ketersediaan foto/video kegiatan.
-7. Rencana donasi: siapa pengelola dana dan bagaimana pertanggungjawabannya (ditunda ke v2)?
-8. Nama domain yang akan dibeli dan jadwal pembeliannya.
+4. (Terjawab) Filter universitas pada Program Kerja dipertahankan sebagai label opsional, bersama filter tahun.
+5. (Terjawab) Pendaftaran = Daftar → Login Google (Clerk) → Onboarding profil lengkap; tidak ada formulir terpisah.
+6. (Sebagian terjawab) Palet awal biru dongker `#0F1E36` dan emas soga `#D97706`. Logo resmi dan foto/video kegiatan belum tersedia: gunakan placeholder yang jelas bertanda.
+7. Rencana donasi: siapa pengelola dana dan bagaimana pertanggungjawabannya (ditunda ke v2).
+8. Nama domain yang akan dibeli dan jadwal pembeliannya (belum ditentukan; sementara `*.pages.dev`).
+9. Foto profil anggota: apakah anggota boleh mengunggah foto sendiri ke Cloudinary, atau v1 cukup memakai avatar Google dari Clerk (lebih sedikit data pribadi dan kuota)? Default sementara: avatar Google, unggahan foto profil ditunda sampai diputuskan.
 
 ---
 
