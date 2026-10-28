@@ -14,11 +14,21 @@ import { KebijakanPrivasiPage } from './pages/public/KebijakanPrivasiPage';
 import { SyaratPenggunaanPage } from './pages/public/SyaratPenggunaanPage';
 import { NotFoundPage } from './pages/public/NotFoundPage';
 
+// Anggota & Auth Pages
+import { OnboardingPage } from './pages/auth/OnboardingPage';
+import { StatusPage } from './pages/auth/StatusPage';
+import { DirektoriPage } from './pages/members/DirektoriPage';
+import { MemberDetailPage } from './pages/members/MemberDetailPage';
+import { ProfilSayaPage } from './pages/members/ProfilSayaPage';
+import { ApprovalsPage } from './pages/admin/ApprovalsPage';
+import { AuthGuard } from './components/auth/AuthGuard';
+
 export function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<MainLayout />}>
+          {/* Halaman Publik */}
           <Route index element={<HomePage />} />
           <Route path="profil" element={<ProfilPage />} />
           <Route path="profil/visi-misi" element={<VisiMisiPage />} />
@@ -31,6 +41,48 @@ export function App() {
           <Route path="daftar" element={<DaftarPage />} />
           <Route path="kebijakan-privasi" element={<KebijakanPrivasiPage />} />
           <Route path="syarat-penggunaan" element={<SyaratPenggunaanPage />} />
+
+          {/* Onboarding & Status */}
+          <Route path="onboarding" element={<OnboardingPage />} />
+          <Route path="status" element={<StatusPage />} />
+
+          {/* Halaman Khusus Anggota Terverifikasi (Status Aktif) */}
+          <Route
+            path="anggota"
+            element={
+              <AuthGuard requireActive={true}>
+                <DirektoriPage />
+              </AuthGuard>
+            }
+          />
+          <Route
+            path="anggota/:username"
+            element={
+              <AuthGuard requireActive={true}>
+                <MemberDetailPage />
+              </AuthGuard>
+            }
+          />
+          <Route
+            path="profil-saya"
+            element={
+              <AuthGuard requireActive={true}>
+                <ProfilSayaPage />
+              </AuthGuard>
+            }
+          />
+
+          {/* Halaman Admin */}
+          <Route
+            path="admin/persetujuan"
+            element={
+              <AuthGuard requireActive={true}>
+                <ApprovalsPage />
+              </AuthGuard>
+            }
+          />
+
+          {/* 404 Fallback */}
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

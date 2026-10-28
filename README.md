@@ -32,11 +32,28 @@ Proyek memisahkan variabel lingkungan frontend dan backend:
    ```bash
    cp .env.example .env
    ```
+   Isi `.env` hanya tiga variabel (semuanya terbaca browser, jadi tidak boleh berisi rahasia):
+   - `DATABASE_URL` — dipakai Drizzle Kit CLI di lokal.
+   - `VITE_CLERK_PUBLISHABLE_KEY` — Clerk publishable key (`pk_test_…` / `pk_live_…`).
+   - `VITE_TURNSTILE_SITE_KEY` — Cloudflare Turnstile site key.
 2. **Backend Pages Functions:** Salin `.dev.vars.example` ke `.dev.vars` (dibaca oleh Wrangler saat menjalankan fungsi server lokal)
    ```bash
    cp .dev.vars.example .dev.vars
    ```
-> **Catatan Keamanan:** Variabel rahasia (`CLERK_SECRET_KEY`, `TURNSTILE_SECRET_KEY`, `CLOUDINARY_API_SECRET`, dll.) hanya diletakkan di `.dev.vars`, sedangkan `.env` hanya untuk variabel `VITE_*` dan `DATABASE_URL` (untuk CLI Drizzle).
+   Isi `.dev.vars`:
+   - `DATABASE_URL`
+   - `CLERK_PUBLISHABLE_KEY`
+   - `CLERK_SECRET_KEY`
+   - `TURNSTILE_SECRET_KEY`
+   - `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` (atau `CLOUDINARY_URL`)
+   - `BOOTSTRAP_SUPER_ADMIN_EMAIL`
+   - `EMAIL_ENABLED` (`false` selama domain kustom belum aktif)
+   - `RESEND_API_KEY` dan `RESEND_FROM_EMAIL` hanya dibutuhkan saat `EMAIL_ENABLED=true`.
+> **Catatan Keamanan:** Variabel rahasia (`CLERK_SECRET_KEY`, `TURNSTILE_SECRET_KEY`,
+> `CLOUDINARY_API_SECRET`, `RESEND_API_KEY`) hanya diletakkan di `.dev.vars`. Dilarang memakai awalan
+> `VITE_` untuk variabel rahasia karena seluruh nilai `VITE_*` ikut masuk bundle browser.
+> Bila `VITE_CLERK_PUBLISHABLE_KEY` kosong, aplikasi tetap menampilkan semua halaman publik dengan
+> pemberitahuan "Konfigurasi login belum lengkap" — tidak ada kunci contoh yang dipakai sebagai fallback.
 
 ### 4. Menjalankan Aplikasi
 ```bash

@@ -6,6 +6,12 @@ Format ini mengacu pada [Keep a Changelog](https://keepachangelog.com/id/1.1.0/)
 ---
 
 ## [Unreleased]
+### Diperbaiki
+- **Layar Putih Clerk:** Menghapus fallback kunci contoh `pk_test_sample_kappama_key` di `src/main.tsx`. Bila `VITE_CLERK_PUBLISHABLE_KEY` kosong, `ClerkProvider` tidak dipasang, seluruh halaman publik tetap dirender, dan pengguna melihat pesan "Konfigurasi login belum lengkap" (banner layout + halaman `/daftar`).
+- **Error Boundary Root:** Menambahkan `ErrorBoundary` di `src/main.tsx` agar galat render menampilkan halaman pemulihan, bukan layar putih.
+- **Audit Env:** Menghapus fallback server `VITE_TURNSTILE_SECRET_KEY` di `functions/[[path]].ts` sehingga tidak ada variabel rahasia berawalan `VITE_`; audit bundle `dist/` bersih dari kunci rahasia. README menyebut daftar variabel baku `.env` dan `.dev.vars`.
+- **Ponytail:** Menggabungkan aturan Ponytail resmi ke `agents.md` (Bagian 8) dengan batas wajib: keamanan, privasi UU PDP, validasi server, dan aksesibilitas PRD tidak boleh dikurangi.
+
 ### Direncanakan
 - Fase 3: Otentikasi Clerk Google Login, formulir Onboarding profil lengkap dengan proteksi Turnstile, logika Lazy Auto-Approve 24 jam di server, dan Direktori Anggota & Alumni.
 

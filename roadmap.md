@@ -11,7 +11,7 @@ Dokumen ini memantau status fase pengerjaan proyek, daftar pertanyaan terbuka un
 | **Fase 0** | **Fondasi Dokumen & Penyelarasan PRD** | 🟢 Selesai | Seluruh dokumen Bagian 14 telah disetujui pemilik proyek dan jawaban terbuka telah disepakati. |
 | **Fase 1** | **Scaffold & Infrastruktur Dasar** | 🟢 Selesai | Vite+React+TS, Hono Pages Functions, Drizzle ORM skema 17 tabel & migrasi, Vitest 100% lulus, CI workflow. |
 | **Fase 2** | **Desain Sistem & Halaman Publik** | 🟢 Selesai | Beranda, Profil (Tentang, Visi-Misi, Struktur 4 jabatan, AD/ART viewer PDF), Program Kerja, Galeri, responsif 360px. |
-| **Fase 3** | **Auth, Onboarding, Persetujuan, & Direktori** | 🟡 Siap Dimulai | Google Auth, Turnstile, Onboarding, Lazy auto-approve 24 jam, Direktori internal. |
+| **Fase 3** | **Auth, Onboarding, Persetujuan, & Direktori** | 🟡 Sedang Berjalan | Sudah ada: Clerk auth context/guard, onboarding, halaman status, direktori anggota, detail anggota, profil saya, antrean persetujuan admin, endpoint `/api/me*`, `/members`, `/admin/approvals`, seed wilayah/kampus. Belum: widget Turnstile klien, pewarisan/pemulihan status, uji endpoint, dan penyelesaian F5/F3 sesuai PRD. |
 | **Fase 4** | **Panel Admin & Manajemen Organisasi** | ⚪ Belum Dimulai | CRUD Konten, Antrean persetujuan, Manajemen anggota & peran, Statistik, Ekspor data. |
 | **Fase 5** | **Hardening, Aksesibilitas, & Kesiapan Rilis** | ⚪ Belum Dimulai | Audit keamanan, E2E testing, uji batas waktu, optimasi Lighthouse mobile. |
 | **Fase 6** | **Peluncuran Domain Kustom & Email Aktif** | ⚪ Ditunda (Pasca Domain) | Pembelian domain kustom, Clerk production, verifikasi DNS Resend, `EMAIL_ENABLED=true`. |

@@ -96,3 +96,42 @@ Setiap modul atau fase dinyatakan selesai hanya jika:
 5. Memiliki state UI yang lengkap: *Loading (Skeleton)*, *Empty State*, *Error State*, dan *Success Toast*.
 6. Tampilan antarmuka telah diverifikasi pada breakpoint mobile (360px) dan desktop.
 7. Berkas `changelog.md` dan `roadmap.md` diperbarui dengan status terkini.
+
+---
+
+## 8. Mode Ponytail — Lazy Senior Developer (WAJIB)
+
+Aturan ini digabungkan dari repositori resmi <https://github.com/DietrichGebert/ponytail> (`AGENTS.md` + `INSTALL.md`, bagian OpenCode). Aturan lama pada Bagian 1–7 tetap berlaku dan tidak digantikan.
+
+### 8.1 Sikap kerja
+- Jawab dengan perubahan terkecil yang menyelesaikan seluruh masalah. Kode terbaik adalah kode yang tidak ditulis.
+- Sebelum menulis, baca tugas dan kode yang disentuh. Daftar semua tempat perubahan harus menjangkau: pemanggil, test, fixture, konfigurasi, ekspor. Periksa risiko bagi pengguna: data yang bisa hilang atau terekspos, pemanggil yang berhenti bekerja. Itu batas lingkup; fitur tambahan bukan lingkup.
+
+### 8.2 Urutan pilihan solusi
+Ambil pilihan pertama yang benar-benar berfungsi:
+1. Apakah fitur ini perlu ada? Lewati fitur, opsi, dan fleksibilitas yang tidak diminta; sebutkan dalam satu baris.
+2. Sudah ada di kode ini (helper, komponen, service, pola)? Pakai seperti kode sekitarnya.
+3. Pustaka standar atau fitur platform? Pakai, kecuali proyek punya sendiri.
+4. Dependensi yang sudah terpasang? Pakai. Jangan menambah dependensi hanya untuk beberapa baris.
+5. Bisa jadi satu baris yang jelas dibaca sekilas? Satu baris.
+6. Selain itu: kode minimum yang bekerja.
+
+### 8.3 Aturan implementasi
+- Malas pada solusi, tidak pada perubahan: selesaikan seluruh bagian yang dibutuhkan tugas, termasuk pemanggil, test, dan fixture yang rusak.
+- Tanpa abstraksi, wrapper, konversi tipe, opsi, konfigurasi, atau kode "untuk nanti" yang tidak diminta. Hapus lebih baik daripada menambah. Ikuti struktur, lapisan, antarmuka, dan konvensi yang sudah ada.
+- Diff terpendek yang bekerja menang, setelah semua bagian yang harus disentuh diketahui. Satu baris yang butuh didekode bukan berarti pendek.
+- Komentar hanya untuk alasan yang tidak bisa ditunjukkan kode, satu baris.
+- Perbaikan bug: cari semua pemanggil fungsi yang disentuh, lalu perbaiki akar masalah sekali di kode bersama.
+- Kode yang dipindah atau digabung tetap membawa penanganan galat dan validasinya.
+- Antara opsi yang sama besarnya, pilih yang benar pada kasus tepi.
+- Kode malas tanpa pemeriksaan belum selesai: logika baru yang tidak sepele (percabangan, perulangan, parser, uang, keamanan, atau skrip/aplikasi baru) meninggalkan satu test kecil atau self-check berbasis assert. Perubahan sepele tidak perlu.
+- Shortcut dengan batasan yang diketahui diberi komentar: `shortcut: <batasannya>, <kapan harus ditingkatkan>`.
+
+### 8.4 Batas minimalis Ponytail vs PRD (WAJIB)
+Aturan minimalis Ponytail **tidak boleh** mengurangi:
+1. Keamanan dan otorisasi server (validasi Clerk, peran dari database, penolakan `401/403`).
+2. Privasi data pribadi sesuai UU PDP No. 27/2022 (penyaringan `address_detail`, `hide_contact`, larangan logging data pribadi).
+3. Validasi server-side (Zod, Turnstile, sanitasi XSS, pencegahan IDOR).
+4. Aksesibilitas dan state UI yang diwajibkan PRD (loading, empty, error, success toast, breakpoint 360px/desktop).
+
+Jika instruksi Ponytail bertentangan dengan empat poin di atas atau dengan Bagian 4–7, aturan PRD dan keamanan yang menang. Skip bagian yang tidak dikerjakan dan sebutkan satu baris di akhir jawaban, beserta risiko yang perlu diketahui pengguna.

@@ -1,0 +1,101 @@
+{
+  "universities": [
+    { "name": "Universitas Brawijaya", "abbreviation": "UB", "city": "Malang" },
+    { "name": "Universitas Negeri Malang", "abbreviation": "UM", "city": "Malang" },
+    { "name": "UIN Maulana Malik Ibrahim", "abbreviation": "UIN Malang", "city": "Malang" },
+    { "name": "Politeknik Negeri Malang", "abbreviation": "POLINEMA", "city": "Malang" },
+    { "name": "Universitas Muhammadiyah Malang", "abbreviation": "UMM", "city": "Malang" },
+    { "name": "Universitas Islam Malang", "abbreviation": "UNISMA", "city": "Malang" },
+    { "name": "Universitas Merdeka Malang", "abbreviation": "UNMER", "city": "Malang" },
+    { "name": "Institut Teknologi Nasional Malang", "abbreviation": "ITN Malang", "city": "Malang" },
+    { "name": "Universitas Tribhuwana Tunggadewi", "abbreviation": "UNITRI", "city": "Malang" },
+    { "name": "Universitas PGRI Kanjuruhan Malang", "abbreviation": "UNIKAMA", "city": "Malang" },
+    { "name": "Universitas Widyagama Malang", "abbreviation": "UWG", "city": "Malang" },
+    { "name": "Sekolah Tinggi Informatika & Komputer Indonesia", "abbreviation": "STIKI Malang", "city": "Malang" },
+    { "name": "Poltekkes Kemenkes Malang", "abbreviation": "POLKESMA", "city": "Malang" },
+    { "name": "Lainnya", "abbreviation": "Lainnya", "city": "Malang" }
+  ],
+  "studyPrograms": [
+    { "univAbbr": "UB", "name": "Teknik Informatika", "degreeLevel": "S1" },
+    { "univAbbr": "UB", "name": "Sistem Informasi", "degreeLevel": "S1" },
+    { "univAbbr": "UB", "name": "Ilmu Hukum", "degreeLevel": "S1" },
+    { "univAbbr": "UB", "name": "Manajemen", "degreeLevel": "S1" },
+    { "univAbbr": "UB", "name": "Akuntansi", "degreeLevel": "S1" },
+    { "univAbbr": "UB", "name": "Kedokteran", "degreeLevel": "S1" },
+    { "univAbbr": "UB", "name": "Administrasi Publik", "degreeLevel": "S1" },
+    { "univAbbr": "UB", "name": "Teknik Sipil", "degreeLevel": "S1" },
+    { "univAbbr": "UB", "name": "Lainnya", "degreeLevel": "S1" },
+
+    { "univAbbr": "UM", "name": "Pendidikan Guru Sekolah Dasar", "degreeLevel": "S1" },
+    { "univAbbr": "UM", "name": "Pendidikan Bahasa Inggris", "degreeLevel": "S1" },
+    { "univAbbr": "UM", "name": "Teknik Elektro", "degreeLevel": "S1" },
+    { "univAbbr": "UM", "name": "Psikologi", "degreeLevel": "S1" },
+    { "univAbbr": "UM", "name": "Pendidikan Matematika", "degreeLevel": "S1" },
+    { "univAbbr": "UM", "name": "Lainnya", "degreeLevel": "S1" },
+
+    { "univAbbr": "UIN Malang", "name": "Pendidikan Agama Islam", "degreeLevel": "S1" },
+    { "univAbbr": "UIN Malang", "name": "Teknik Informatika", "degreeLevel": "S1" },
+    { "univAbbr": "UIN Malang", "name": "Farmasi", "degreeLevel": "S1" },
+    { "univAbbr": "UIN Malang", "name": "Perbankan Syariah", "degreeLevel": "S1" },
+    { "univAbbr": "UIN Malang", "name": "Lainnya", "degreeLevel": "S1" },
+
+    { "univAbbr": "POLINEMA", "name": "Teknik Informatika", "degreeLevel": "D4" },
+    { "univAbbr": "POLINEMA", "name": "Sistem Informasi Bisnis", "degreeLevel": "D4" },
+    { "univAbbr": "POLINEMA", "name": "Teknik Mesin", "degreeLevel": "D3" },
+    { "univAbbr": "POLINEMA", "name": "Akuntansi Manajemen", "degreeLevel": "D4" },
+    { "univAbbr": "POLINEMA", "name": "Lainnya", "degreeLevel": "D4" },
+
+    { "univAbbr": "UMM", "name": "Ilmu Komunikasi", "degreeLevel": "S1" },
+    { "univAbbr": "UMM", "name": "Informatika", "degreeLevel": "S1" },
+    { "univAbbr": "UMM", "name": "Kedokteran", "degreeLevel": "S1" },
+    { "univAbbr": "UMM", "name": "Hubungan Internasional", "degreeLevel": "S1" },
+    { "univAbbr": "UMM", "name": "Lainnya", "degreeLevel": "S1" },
+
+    { "univAbbr": "UNISMA", "name": "Agroteknologi", "degreeLevel": "S1" },
+    { "univAbbr": "UNISMA", "name": "Pendidikan Bahasa dan Sastra Indonesia", "degreeLevel": "S1" },
+    { "univAbbr": "UNISMA", "name": "Lainnya", "degreeLevel": "S1" },
+
+    { "univAbbr": "UNMER", "name": "Teknik Arsitektur", "degreeLevel": "S1" },
+    { "univAbbr": "UNMER", "name": "Ilmu Ekonomi", "degreeLevel": "S1" },
+    { "univAbbr": "UNMER", "name": "Lainnya", "degreeLevel": "S1" },
+
+    { "univAbbr": "ITN Malang", "name": "Teknik Lingkungan", "degreeLevel": "S1" },
+    { "univAbbr": "ITN Malang", "name": "Perencanaan Wilayah dan Kota", "degreeLevel": "S1" },
+    { "univAbbr": "ITN Malang", "name": "Lainnya", "degreeLevel": "S1" },
+
+    { "univAbbr": "UNITRI", "name": "Keperawatan", "degreeLevel": "S1" },
+    { "univAbbr": "UNITRI", "name": "Lainnya", "degreeLevel": "S1" },
+
+    { "univAbbr": "UNIKAMA", "name": "Bimbingan dan Konseling", "degreeLevel": "S1" },
+    { "univAbbr": "UNIKAMA", "name": "Lainnya", "degreeLevel": "S1" },
+
+    { "univAbbr": "UWG", "name": "Manajemen Bisnis", "degreeLevel": "S1" },
+    { "univAbbr": "UWG", "name": "Lainnya", "degreeLevel": "S1" },
+
+    { "univAbbr": "STIKI Malang", "name": "Teknik Informatika", "degreeLevel": "S1" },
+    { "univAbbr": "STIKI Malang", "name": "Sistem Informasi", "degreeLevel": "S1" },
+    { "univAbbr": "STIKI Malang", "name": "Lainnya", "degreeLevel": "S1" },
+
+    { "univAbbr": "POLKESMA", "name": "Keperawatan", "degreeLevel": "D3" },
+    { "univAbbr": "POLKESMA", "name": "Gizi dan Dietetika", "degreeLevel": "D4" },
+    { "univAbbr": "POLKESMA", "name": "Kebidanan", "degreeLevel": "D3" },
+    { "univAbbr": "POLKESMA", "name": "Lainnya", "degreeLevel": "D3" },
+
+    { "univAbbr": "Lainnya", "name": "Lainnya", "degreeLevel": "S1" }
+  ],
+  "industries": [
+    "Teknologi Informasi & Perangkat Lunak",
+    "Pendidikan, Riset & Pelatihan",
+    "Pemerintahan & Kebijakan Publik",
+    "Kesehatan & Farmasi",
+    "Keuangan, Perbankan & Asuransi",
+    "Manufaktur, Teknik & Otomotif",
+    "Konstruksi, Real Estat & Properti",
+    "Pertanian, Perkebunan & Kehutanan",
+    "Media, Komunikasi & Kreatif",
+    "Wirausaha, Ritel & UMKM",
+    "Pariwisata, Perhotelan & Kuliner",
+    "Hukum & Konsultasi Bisnis",
+    "Lainnya"
+  ]
+}

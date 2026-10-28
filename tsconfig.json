@@ -12,7 +12,7 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "types": ["@cloudflare/workers-types"],
+    "types": ["vite/client", "@cloudflare/workers-types/2023-07-01"],
 
     /* Linting */
     "strict": true,
@@ -27,5 +27,5 @@
       "@shared/*": ["./shared/*"]
     }
   },
-  "include": ["src", "functions", "shared", "db"]
+  "include": ["src", "functions", "shared"]
 }
