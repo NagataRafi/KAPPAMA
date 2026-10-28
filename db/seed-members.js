@@ -21,6 +21,17 @@ function loadEnv() {
 }
 
 loadEnv();
+
+// Data dummy tidak boleh ikut terisi tanpa persetujuan eksplisit.
+// Semua baris dummy ditandai clerk_user_id berawalan 'user_dummy_'.
+if (process.env.SEED_DUMMY_MEMBERS !== 'true') {
+  console.error(
+    'Dibatalkan: set SEED_DUMMY_MEMBERS=true untuk mengisi data anggota dummy. ' +
+      'Hapus data dummy dengan: DELETE FROM users WHERE clerk_user_id LIKE \'user_dummy_%\';'
+  );
+  process.exit(1);
+}
+
 const sql = neon(process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL);
 
 async function seedMembers() {

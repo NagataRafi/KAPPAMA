@@ -255,27 +255,32 @@ Semua kueri aplikasi secara default menerapkan filter `WHERE deleted_at IS NULL`
 
 ## 4. Master Data Wilayah Pacitan (Sumber Resmi & Validasi)
 
-Sesuai aturan PRD Bagian 9 & 14, daftar kecamatan dan desa/kelurahan diambil dari rujukan resmi kode wilayah administratif Kemendagri / BPS Jawa Timur (Kabupaten Pacitan: kode `35.01`).
+Sesuai aturan PRD Bagian 9 & 14, daftar kecamatan dan desa/kelurahan diambil dari rujukan resmi Pemerintah Kabupaten Pacitan, BPS, dan Kemendagri (Kabupaten Pacitan: kode `35.01`).
 
-- **Sumber Data:** Kepmendagri No. 100.1.1-6117 Tahun 2022 / Data Master Wilayah Kemendagri & BPS.
-- **Tanggal Verifikasi:** 25 Oktober 2026.
-- **Jumlah Wilayah:** 12 Kecamatan, 171 Desa/Kelurahan (166 Desa + 5 Kelurahan).
+- **Sumber Data:**
+  1. Ringkasan LPPD Kabupaten Pacitan Tahun 2024, Tabel 1.4 "Jumlah Kecamatan dan Desa/Kelurahan" (sumber Dukcapil Pemkab Pacitan), <https://ppid.pacitankab.go.id/wp-content/uploads/2025/08/LPPD-2024.pdf>
+  2. BPS SIG Bridging API (kode BPS dan kode Dagri per kecamatan/desa), <https://sig.bps.go.id/rest-bridging/getwilayah?level=kecamatan&parent=3501> dan `?level=desa&parent=<kode_bps>`
+  3. Peraturan Daerah Kabupaten Pacitan Nomor 6 Tahun 2022 tentang Pembentukan Desa Ketro Harjo, Kecamatan Tulakan (kode Desa `35.01.10.2017`).
+- **Tanggal Verifikasi:** 28 Oktober 2026.
+- **Jumlah Wilayah:** 12 Kecamatan, 172 Desa/Kelurahan (167 Desa + 5 Kelurahan).
+- **Catatan Rekonsiliasi:** BPS SIG Bridging hanya memuat 171 entri (166 desa + 5 kelurahan) karena Desa Ketro Harjo (`35.01.10.2017`) belum terdaftar di API tersebut. Entri itu ditambahkan berdasarkan Perda No. 6 Tahun 2022 dan Tabel 1.4 LPPD 2024, sehingga total menjadi 172 entri sesuai angka resmi Pemkab Pacitan.
+- **Pemetaan Ulang:** Data seed lama memakai kode Dagri yang tidak cocok dengan nama desa (mis. `35.01.04.2001` tertulis "Belah"). Berkas `db/seed/pacitan-regions.json` ditulis ulang dari API BPS; 6 baris `villages` lama yang tidak ada di daftar resmi dihapus dari database saat rekonsiliasi.
 
 ### 12 Kecamatan Resmi Kabupaten Pacitan:
 1. `35.01.01` - Donorojo
 2. `35.01.02` - Pringkuku
 3. `35.01.03` - Punung
-4. `35.01.04` - Pacitan (Termasuk Kelurahan Pacitan, Baleharjo, Ploso, Sidoharjo, Sumberharjo)
+4. `35.01.04` - Pacitan (5 kelurahan: Pacitan, Pucangsewu, Sidoharjo, Ploso, Baleharjo)
 5. `35.01.05` - Kebonagung
 6. `35.01.06` - Arjosari
 7. `35.01.07` - Nawangan
 8. `35.01.08` - Bandar
 9. `35.01.09` - Tegalombo
-10. `35.01.10` - Tulakan
+10. `35.01.10` - Tulakan (termasuk Desa Ketro Harjo)
 11. `35.01.11` - Ngadirojo
 12. `35.01.12` - Sudimoro
 
-Data lengkap 171 desa/kelurahan akan di-seed melalui berkas `db/seed/pacitan-regions.json`.
+Data lengkap 172 desa/kelurahan di-seed dari berkas `db/seed/pacitan-regions.json`. Verifikasi pasca-seed: `SELECT COUNT(*) FROM villages` = 172 dan 5 baris berkode kelurahan (`35.01.04.1xxx`).
 
 ---
 
@@ -292,10 +297,13 @@ Data lengkap 171 desa/kelurahan akan di-seed melalui berkas `db/seed/pacitan-reg
    pnpm db:migrate
    ```
 4. Seed master data (`pnpm db:seed`) mengeksekusi urutan:
-   - Master 12 Kecamatan dan 171 Desa Pacitan.
-   - Master 13 Universitas di Malang + opsi "Lainnya".
-   - Master Program Studi populer per universitas.
-   - Master 10 Bidang Industri umum.
+   - Master 12 Kecamatan dan 172 Desa/Kelurahan Pacitan (idempotent, `ON CONFLICT DO UPDATE`).
+   - Master 14 Perguruan Tinggi di Malang + opsi "Lainnya".
+   - Master 53 Program Studi populer per universitas.
+   - Master 13 Bidang Industri umum.
    - Periode kepengurusan saat ini (`org_periods`).
    - Placeholder profil organisasi (`org_profile`).
-   - Akun bootstrap dummy untuk lingkungan pengujian dev.
+5. Seed anggota dummy (`node db/seed-members.js`) **tidak** dijalankan otomatis. Skrip menolak berjalan kecuali `SEED_DUMMY_MEMBERS=true`, dan semua baris dummy ditandai `users.clerk_user_id` berawalan `user_dummy_`. Hapus dengan:
+   ```sql
+   DELETE FROM users WHERE clerk_user_id LIKE 'user_dummy_%';
+   ```

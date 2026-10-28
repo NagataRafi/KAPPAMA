@@ -1,4 +1,4 @@
-# Peta Jalan Pengembangan (Roadmap) — Website KAPPAMA
+﻿# Peta Jalan Pengembangan (Roadmap) — Website KAPPAMA
 
 Dokumen ini memantau status fase pengerjaan proyek, daftar pertanyaan terbuka untuk pemilik proyek, manajemen risiko, dan backlog fitur masa depan (v2).
 
@@ -11,7 +11,7 @@ Dokumen ini memantau status fase pengerjaan proyek, daftar pertanyaan terbuka un
 | **Fase 0** | **Fondasi Dokumen & Penyelarasan PRD** | 🟢 Selesai | Seluruh dokumen Bagian 14 telah disetujui pemilik proyek dan jawaban terbuka telah disepakati. |
 | **Fase 1** | **Scaffold & Infrastruktur Dasar** | 🟢 Selesai | Vite+React+TS, Hono Pages Functions, Drizzle ORM skema 17 tabel & migrasi, Vitest 100% lulus, CI workflow. |
 | **Fase 2** | **Desain Sistem & Halaman Publik** | 🟢 Selesai | Beranda, Profil (Tentang, Visi-Misi, Struktur 4 jabatan, AD/ART viewer PDF), Program Kerja, Galeri, responsif 360px. |
-| **Fase 3** | **Auth, Onboarding, Persetujuan, & Direktori** | 🟡 Sedang Berjalan | Sudah ada: Clerk auth context/guard, onboarding, halaman status, direktori anggota, detail anggota, profil saya, antrean persetujuan admin, endpoint `/api/me*`, `/members`, `/admin/approvals`, seed wilayah/kampus. Belum: widget Turnstile klien, pewarisan/pemulihan status, uji endpoint, dan penyelesaian F5/F3 sesuai PRD. |
+| **Fase 3** | **Auth, Onboarding, Persetujuan, & Direktori** | 🟡 Selesai (menunggu persetujuan Fase 4) | Sudah lengkap: Clerk auth context/guard, verifikasi sesi server (JWKS + Backend API), widget Turnstile nyata & verifikasi fail-closed, onboarding + persetujuan UU PDP, status & ajukan ulang, antrean persetujuan, tangguhkan/pulihkan, kelola peran dengan guard Super Admin terakhir, direktori + filter prodi + pagination 20/halaman, seed 12 kecamatan & 172 desa/kelurahan resmi, 32 test lulus. |
 | **Fase 4** | **Panel Admin & Manajemen Organisasi** | ⚪ Belum Dimulai | CRUD Konten, Antrean persetujuan, Manajemen anggota & peran, Statistik, Ekspor data. |
 | **Fase 5** | **Hardening, Aksesibilitas, & Kesiapan Rilis** | ⚪ Belum Dimulai | Audit keamanan, E2E testing, uji batas waktu, optimasi Lighthouse mobile. |
 | **Fase 6** | **Peluncuran Domain Kustom & Email Aktif** | ⚪ Ditunda (Pasca Domain) | Pembelian domain kustom, Clerk production, verifikasi DNS Resend, `EMAIL_ENABLED=true`. |

@@ -44,6 +44,28 @@ Dokumen ini memuat skenario pengujian komprehensif per fitur, per peran pengguna
 
 ---
 
+## 2.1 Uji Integrasi Otomatis (Vitest) — Fase 3
+
+Berkas: `functions/api-authz.test.ts` (22 test). Jalankan dengan `pnpm test`.
+
+Mock: `@neondatabase/serverless` (tagged-template tiruan) dan `functions/lib/clerk-auth` (sesi Clerk). Endpoint diuji langsung melalui `app.request()` Hono dengan `basePath /api`.
+
+- [x] **Direktori 401/403:** pengunjung tanpa sesi `401`; anggota `pending` dan `rejected` `403`; anggota `active` `200`.
+- [x] **UU PDP direktori:** `addressDetail` tidak pernah ada di payload; `whatsapp`/`email` menjadi `null` saat `hide_contact = true`.
+- [x] **IDOR detail anggota:** anggota lain tidak menerima `addressDetail`; pemilik menerima; admin menerima dan memicu audit `ADMIN_VIEWED_ADDRESS_DETAIL`.
+- [x] **Detail anggota non-aktif:** anggota `pending` menerima `403`.
+- [x] **Peran:** Admin Konten ditolak `403` di `PUT /admin/users/:id/role`; Super Admin berhasil dan audit `USER_ROLE_CHANGED` tidak memuat email.
+- [x] **Super Admin terakhir:** pencabutan ditolak `409 LAST_SUPER_ADMIN`.
+- [x] **Penolakan:** alasan kosong `422`; audit `MEMBER_REJECTED` tidak menyimpan teks alasan.
+- [x] **Auto-approve:** 23 jam 59 menit `pending`; tepat 24 jam `active`; 24 jam 01 menit `active`.
+- [x] **Tolak lalu ajukan ulang:** status kembali `pending` dan `submitted_at` ter-reset.
+- [x] **Tangguhkan setelah auto-aktif:** `suspend` pertama `200`, kedua `404`; `restore` mengembalikan `active`.
+- [x] **Turnstile fail-closed:** tanpa `TURNSTILE_SECRET_KEY` dan saat `siteverify` menjawab gagal, onboarding `400 BOT_VERIFICATION_FAILED`.
+
+Status terakhir: `3 berkas uji, 32 test lulus`.
+
+---
+
 ## 3. Pengujian Privasi & Perlindungan Data (UU PDP)
 
 - [ ] **Kebocoran Alamat Detail:**

@@ -188,3 +188,14 @@ Karena Cloudflare Pages Functions tidak menyediakan cron job bawaan gratis, atur
 - **Keputusan:** Menggunakan Cloudinary free-tier melalui antarmuka abstraksi `StorageService` dengan metode signed upload langsung dari browser klien ke Cloudinary. Database menyimpan `public_id` Cloudinary pada kolom `*_key`.
 - **Alternatif Ditolak:** Menyimpan berkas media mentah di database Neon (menghabiskan kuota database) atau memaksa R2 tanpa kartu.
 - **Konsekuensi:** Biaya tetap Rp0 tanpa butuh kartu kredit, foto otomatis mendapat optimasi CDN (`f_auto,q_auto`), dan adapter R2 tetap dapat dipasang di kemudian hari melalui `StorageService` tanpa merombak kode fitur.
+
+### ADR-005: Verifikasi Sesi Clerk di Server (JWKS + Backend API)
+- **Konteks:** Versi awal `getAuthUser()` mempercayai header `X-Clerk-User-Id`/`X-User-Email` dan hanya men-decode payload JWT tanpa memeriksa tanda tangan. Siapa pun bisa mengaku sebagai pengguna atau Super Admin.
+- **Keputusan:** Verifikasi JWT RS256 terhadap JWKS Clerk (`https://api.clerk.com/v1/jwks`, cache 5 menit), cek `exp`/`nbf`, lalu ambil email dari Clerk Backend API (`GET /v1/users/:id`) dan wajibkan status `verified`. Modul: `functions/lib/clerk-auth.ts`.
+- **Alternatif Ditolak:** Memasang SDK Clerk penuh di Pages Functions (menambah dependensi) atau tetap memakai header klien (tidak aman).
+- **Konsekuensi:** Setiap request terautentikasi melakukan satu panggilan Backend API (bisa di-cache di masa depan), gagal tertutup bila `CLERK_SECRET_KEY` kosong, dan bootstrap Super Admin hanya mungkin dari email Google terverifikasi yang cocok dengan `BOOTSTRAP_SUPER_ADMIN_EMAIL`.
+
+### ADR-006: Turnstile Fail-Closed
+- **Konteks:** Kode lama meloloskan token uji `XXXX.DUMMY.TOKEN.XXXX`, sitekey uji, atau melewati verifikasi saat secret kosong.
+- **Keputusan:** `verifyTurnstileToken()` mengembalikan `false` bila token/secret kosong atau `siteverify` gagal. Widget nyata di klien: `src/components/auth/TurnstileWidget.tsx` membaca `VITE_TURNSTILE_SITE_KEY`.
+- **Konsekuensi:** Lingkungan tanpa `TURNSTILE_SECRET_KEY` tidak bisa menerima pendaftaran (sesuai keinginan PRD); kunci uji Cloudflare tetap dipakai lewat jalur `siteverify` resmi.

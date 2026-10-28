@@ -4,6 +4,7 @@ import { neon } from '@neondatabase/serverless';
 import { parseCloudinaryUrl } from '../shared/services/storage/cloudinary-storage';
 import { getEffectiveStatus } from '../shared/utils/effective-status';
 import { onboardingInputSchema } from '../shared/schema/member-schema';
+import { verifyClerkSessionToken, fetchClerkUser } from './lib/clerk-auth';
 
 export interface Env {
   // Database
@@ -72,12 +73,14 @@ function resolveConfig(env?: Env) {
 }
 
 // Helper verifikasi Turnstile
-async function verifyTurnstileToken(token: string, secretKey?: string, ip?: string): Promise<boolean> {
-  // Test sitekey/secret bypass
-  if (token === 'XXXX.DUMMY.TOKEN.XXXX' || token === '1x00000000000000000000AA' || secretKey === '1x0000000000000000000000000000000AA') {
-    return true;
-  }
-  if (!secretKey) return true; // Fallback jika belum di-set di dev
+async function verifyTurnstileToken(
+  token: string,
+  secretKey?: string,
+  ip?: string
+): Promise<boolean> {
+  // Fail-closed: tanpa secret atau tanpa token, permintaan ditolak.
+  // Kunci uji Cloudflare (1x000...AA) tetap diverifikasi lewat siteverify.
+  if (!secretKey || !token) return false;
 
   try {
     const formData = new URLSearchParams();
@@ -90,7 +93,7 @@ async function verifyTurnstileToken(token: string, secretKey?: string, ip?: stri
       body: formData,
     });
     const result = (await res.json()) as { success: boolean };
-    return result.success;
+    return result.success === true;
   } catch {
     return false;
   }
@@ -108,57 +111,55 @@ async function getAuthUser(c: Context<{ Bindings: Env }>): Promise<AuthUser | nu
   const config = resolveConfig(c.env);
   if (!config.databaseUrl) return null;
 
-  const sql = neon(config.databaseUrl);
-
+  // Hanya token Clerk yang ditandatangani Clerk yang dipercaya. Header klien
+  // (X-Clerk-User-Id / X-User-Email) tidak pernah dipakai.
   const authHeader = c.req.header('Authorization');
-  const clerkUserIdHeader = c.req.header('X-Clerk-User-Id');
-  const userEmailHeader = c.req.header('X-User-Email');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
 
-  let clerkUserId: string | null = clerkUserIdHeader || null;
-  let userEmail: string | null = userEmailHeader || null;
+  const session = await verifyClerkSessionToken(authHeader.slice(7));
+  if (!session) return null;
 
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.slice(7);
-    try {
-      const parts = token.split('.');
-      if (parts.length === 3) {
-        const payloadStr = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
-        const payload = JSON.parse(payloadStr);
-        clerkUserId = payload.sub || clerkUserId;
-        userEmail = payload.email || payload.primary_email || userEmail;
-      }
-    } catch {
-      // Token bukan JWT standar, biarkan fallback
-    }
-  }
+  const clerkUser = await fetchClerkUser(session.userId, config.clerk.secretKey);
+  if (!clerkUser || !clerkUser.email || !clerkUser.emailVerified) return null;
 
-  if (!clerkUserId) return null;
+  const sql = neon(config.databaseUrl);
+  const isBootstrapEmail =
+    Boolean(config.bootstrapEmail) &&
+    clerkUser.email.toLowerCase() === config.bootstrapEmail!.toLowerCase();
 
-  // Cari di database atau bootstrap pengguna
   let userRows = await sql`
     SELECT id, clerk_user_id, email, role
     FROM users
-    WHERE clerk_user_id = ${clerkUserId}
+    WHERE clerk_user_id = ${session.userId}
     LIMIT 1
   `;
 
   if (userRows.length === 0) {
-    const emailToUse = userEmail || `${clerkUserId}@placeholder.kappama.org`;
-    const isBootstrap = config.bootstrapEmail && emailToUse.toLowerCase() === config.bootstrapEmail.toLowerCase();
-    const role = isBootstrap ? 'super_admin' : 'member';
+    const role = isBootstrapEmail ? 'super_admin' : 'member';
 
     userRows = await sql`
       INSERT INTO users (clerk_user_id, email, role)
-      VALUES (${clerkUserId}, ${emailToUse}, ${role})
+      VALUES (${session.userId}, ${clerkUser.email}, ${role})
       RETURNING id, clerk_user_id, email, role
     `;
-  } else if (config.bootstrapEmail && userRows[0].email.toLowerCase() === config.bootstrapEmail.toLowerCase() && userRows[0].role !== 'super_admin') {
-    // Otomatis naikkan ke super_admin jika email bootstrap cocok
+
+    if (isBootstrapEmail) {
+      await sql`
+        INSERT INTO audit_logs (actor_id, action, entity, entity_id, metadata)
+        VALUES (${userRows[0].id}, 'SUPER_ADMIN_BOOTSTRAPPED', 'users', ${userRows[0].id}, ${JSON.stringify({ source: 'bootstrap_email' })})
+      `;
+    }
+  } else if (isBootstrapEmail && userRows[0].role !== 'super_admin') {
     userRows = await sql`
       UPDATE users
       SET role = 'super_admin', updated_at = NOW()
       WHERE id = ${userRows[0].id}
       RETURNING id, clerk_user_id, email, role
+    `;
+
+    await sql`
+      INSERT INTO audit_logs (actor_id, action, entity, entity_id, metadata)
+      VALUES (${userRows[0].id}, 'SUPER_ADMIN_BOOTSTRAPPED', 'users', ${userRows[0].id}, ${JSON.stringify({ source: 'bootstrap_email' })})
     `;
   }
 
@@ -168,6 +169,10 @@ async function getAuthUser(c: Context<{ Bindings: Env }>): Promise<AuthUser | nu
     email: userRows[0].email,
     role: userRows[0].role,
   };
+}
+
+function isAdminRole(role: AuthUser['role'] | null | undefined): boolean {
+  return role === 'super_admin' || role === 'content_admin';
 }
 
 // ============================================================================
@@ -624,6 +629,7 @@ app.get('/members', async (c) => {
   const cohort = c.req.query('cohort') ? parseInt(c.req.query('cohort')!) : null;
   const universityId = c.req.query('universityId') || null;
   const districtId = c.req.query('districtId') || null;
+  const studyProgramId = c.req.query('studyProgramId') || null;
   const page = Math.max(1, parseInt(c.req.query('page') || '1'));
   const limit = Math.min(50, Math.max(1, parseInt(c.req.query('limit') || '20')));
   const offset = (page - 1) * limit;
@@ -631,6 +637,7 @@ app.get('/members', async (c) => {
   // Jalankan query dengan filter
   const rows = await sql`
     SELECT
+      COUNT(*) OVER() AS total_count,
       m.id,
       m.full_name,
       m.username,
@@ -670,6 +677,7 @@ app.get('/members', async (c) => {
       ${cohort ? sql`AND m.cohort_year = ${cohort}` : sql``}
       ${universityId ? sql`AND m.university_id = ${universityId}` : sql``}
       ${districtId ? sql`AND m.district_id = ${districtId}` : sql``}
+      ${studyProgramId ? sql`AND m.study_program_id = ${studyProgramId}` : sql``}
       ${search ? sql`AND (m.full_name ILIKE ${'%' + search + '%'} OR m.username ILIKE ${'%' + search + '%'})` : sql``}
     ORDER BY m.cohort_year DESC, m.full_name ASC
     LIMIT ${limit} OFFSET ${offset}
@@ -714,6 +722,7 @@ app.get('/members', async (c) => {
       page,
       limit,
       count: sanitized.length,
+      total: Number(rows[0]?.total_count ?? sanitized.length),
     },
   });
 });
@@ -727,6 +736,32 @@ app.get('/members/:username', async (c) => {
   const username = c.req.param('username');
   const config = resolveConfig(c.env);
   const sql = neon(config.databaseUrl!);
+
+  const isAdmin = isAdminRole(authUser.role);
+  if (!isAdmin) {
+    const viewerRows = await sql`
+      SELECT status, submitted_at FROM member_profiles
+      WHERE user_id = ${authUser.id} AND deleted_at IS NULL LIMIT 1
+    `;
+    const viewerEffective =
+      viewerRows.length > 0
+        ? getEffectiveStatus({
+            status: viewerRows[0].status,
+            submittedAt: viewerRows[0].submitted_at,
+          })
+        : null;
+    if (!viewerEffective || viewerEffective.status !== 'active') {
+      return c.json(
+        {
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Detail anggota hanya dapat diakses oleh anggota terverifikasi (status aktif).',
+          },
+        },
+        403
+      );
+    }
+  }
 
   const rows = await sql`
     SELECT
@@ -775,11 +810,18 @@ app.get('/members/:username', async (c) => {
 
   const r = rows[0];
   const isOwner = r.user_id === authUser.id;
-  const isAdmin = authUser.role === 'super_admin' || authUser.role === 'content_admin';
 
   // UU PDP: address_detail hanya untuk pemilik & admin
   const addressDetail = (isOwner || isAdmin) ? r.address_detail : null;
   const isProtectedContact = r.hide_contact && !isOwner && !isAdmin;
+
+  // Setiap akses admin ke detail alamat dicatat tanpa menyimpan isinya.
+  if (isAdmin && !isOwner && r.address_detail) {
+    await sql`
+      INSERT INTO audit_logs (actor_id, action, entity, entity_id, metadata)
+      VALUES (${authUser.id}, 'ADMIN_VIEWED_ADDRESS_DETAIL', 'member_profiles', ${r.id}, ${JSON.stringify({ field: 'address_detail' })})
+    `;
+  }
 
   return c.json({
     data: {
@@ -930,10 +972,135 @@ app.post('/admin/approvals/:id/reject', async (c) => {
 
   await sql`
     INSERT INTO audit_logs (actor_id, action, entity, entity_id, metadata)
-    VALUES (${authUser.id}, 'MEMBER_REJECTED', 'member_profiles', ${id}, ${JSON.stringify({ reason })})
+    VALUES (${authUser.id}, 'MEMBER_REJECTED', 'member_profiles', ${id}, ${JSON.stringify({ reasonProvided: true })})
   `;
 
   return c.json({ data: { message: 'Pendaftar berhasil ditolak' } });
+});
+
+// Tangguhkan anggota (Admin Konten / Super Admin)
+app.post('/admin/members/:id/suspend', async (c) => {
+  const authUser = await getAuthUser(c);
+  if (!authUser || !isAdminRole(authUser.role)) {
+    return c.json({ error: { code: 'FORBIDDEN', message: 'Akses ditolak' } }, 403);
+  }
+
+  const id = c.req.param('id');
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+
+  const result = await sql`
+    UPDATE member_profiles
+    SET status = 'suspended', updated_at = NOW()
+    WHERE id = ${id} AND status IN ('active', 'pending')
+    RETURNING id, status
+  `;
+
+  if (result.length === 0) {
+    return c.json(
+      { error: { code: 'NOT_FOUND', message: 'Anggota tidak ditemukan atau sudah ditangguhkan' } },
+      404
+    );
+  }
+
+  await sql`
+    INSERT INTO audit_logs (actor_id, action, entity, entity_id, metadata)
+    VALUES (${authUser.id}, 'MEMBER_SUSPENDED', 'member_profiles', ${id}, ${JSON.stringify({ to: 'suspended' })})
+  `;
+
+  return c.json({ data: { message: 'Anggota berhasil ditangguhkan' } });
+});
+
+// Pulihkan anggota yang ditangguhkan (Admin Konten / Super Admin)
+app.post('/admin/members/:id/restore', async (c) => {
+  const authUser = await getAuthUser(c);
+  if (!authUser || !isAdminRole(authUser.role)) {
+    return c.json({ error: { code: 'FORBIDDEN', message: 'Akses ditolak' } }, 403);
+  }
+
+  const id = c.req.param('id');
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+
+  const result = await sql`
+    UPDATE member_profiles
+    SET status = 'active', approved_by = ${authUser.id}, approved_at = NOW(), approval_type = 'manual', updated_at = NOW()
+    WHERE id = ${id} AND status = 'suspended'
+    RETURNING id, status
+  `;
+
+  if (result.length === 0) {
+    return c.json(
+      { error: { code: 'NOT_FOUND', message: 'Anggota tidak ditemukan atau tidak sedang ditangguhkan' } },
+      404
+    );
+  }
+
+  await sql`
+    INSERT INTO audit_logs (actor_id, action, entity, entity_id, metadata)
+    VALUES (${authUser.id}, 'MEMBER_RESTORED', 'member_profiles', ${id}, ${JSON.stringify({ to: 'active' })})
+  `;
+
+  return c.json({ data: { message: 'Anggota berhasil dipulihkan' } });
+});
+
+// Kelola peran pengguna (khusus Super Admin)
+app.put('/admin/users/:id/role', async (c) => {
+  const authUser = await getAuthUser(c);
+  if (!authUser || authUser.role !== 'super_admin') {
+    return c.json({ error: { code: 'FORBIDDEN', message: 'Hanya Super Admin yang dapat mengubah peran' } }, 403);
+  }
+
+  const id = c.req.param('id');
+  const body = await c.req.json().catch(() => ({}));
+  const role = body.role;
+  if (role !== 'member' && role !== 'content_admin' && role !== 'super_admin') {
+    return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Peran tidak valid' } }, 422);
+  }
+
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+
+  const targetRows = await sql`
+    SELECT id, role FROM users WHERE id = ${id} LIMIT 1
+  `;
+  if (targetRows.length === 0) {
+    return c.json({ error: { code: 'NOT_FOUND', message: 'Pengguna tidak ditemukan' } }, 404);
+  }
+
+  const previousRole = targetRows[0].role;
+  if (previousRole === role) {
+    return c.json({ data: { message: 'Peran tidak berubah' } });
+  }
+
+  // Cegah pencabutan Super Admin terakhir.
+  if (previousRole === 'super_admin' && role !== 'super_admin') {
+    const countRows = await sql`
+      SELECT COUNT(*)::int AS count FROM users WHERE role = 'super_admin'
+    `;
+    if (Number(countRows[0]?.count ?? 0) <= 1) {
+      return c.json(
+        {
+          error: {
+            code: 'LAST_SUPER_ADMIN',
+            message: 'Super Admin terakhir tidak boleh dicabut. Angkat Super Admin lain terlebih dahulu.',
+          },
+        },
+        409
+      );
+    }
+  }
+
+  await sql`
+    UPDATE users SET role = ${role}, updated_at = NOW() WHERE id = ${id}
+  `;
+
+  await sql`
+    INSERT INTO audit_logs (actor_id, action, entity, entity_id, metadata)
+    VALUES (${authUser.id}, 'USER_ROLE_CHANGED', 'users', ${id}, ${JSON.stringify({ from: previousRole, to: role })})
+  `;
+
+  return c.json({ data: { message: 'Peran berhasil diperbarui' } });
 });
 
 // Fallback untuk route API yang belum diimplementasikan
@@ -950,3 +1117,6 @@ app.all('*', (c) => {
 });
 
 export const onRequest = handle(app);
+
+// Diekspor untuk pengujian integrasi tanpa Cloudflare runtime.
+export { app };

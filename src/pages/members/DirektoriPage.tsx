@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useAppAuth } from '../../components/auth/AuthContext';
-import { getMembers, getDistricts, getUniversities, ApiMemberProfile } from '../../services/api';
+import { getMembers, getDistricts, getUniversities, getStudyPrograms, ApiMemberProfile } from '../../services/api';
 import { Search, MessageCircle, Mail, MapPin, GraduationCap, Briefcase, ChevronRight, X } from 'lucide-react';
 import { EmptyState } from '../../components/common/EmptyState';
 import { LoadingSkeleton } from '../../components/common/LoadingSkeleton';
@@ -11,7 +11,7 @@ export function DirektoriPage() {
 
   const [members, setMembers] = useState<ApiMemberProfile[]>([]);
   const [loading, setLoading] = useState(true);
-  const [meta, setMeta] = useState({ page: 1, limit: 20, count: 0 });
+  const [meta, setMeta] = useState({ page: 1, limit: 20, count: 0, total: 0 });
 
   // Filter state
   const [search, setSearch] = useState('');
@@ -19,10 +19,12 @@ export function DirektoriPage() {
   const [cohort, setCohort] = useState<string>('');
   const [universityId, setUniversityId] = useState<string>('');
   const [districtId, setDistrictId] = useState<string>('');
+  const [studyProgramId, setStudyProgramId] = useState<string>('');
 
   // Master data filter
   const [districts, setDistricts] = useState<Array<{ id: string; name: string }>>([]);
   const [universities, setUniversities] = useState<Array<{ id: string; name: string; abbreviation: string }>>([]);
+  const [studyPrograms, setStudyPrograms] = useState<Array<{ id: string; name: string }>>([]);
 
   // Load master data filter
   useEffect(() => {
@@ -33,6 +35,18 @@ export function DirektoriPage() {
       })
       .catch((err) => console.error('Gagal memuat filter data:', err));
   }, []);
+
+  // Program studi bergantung pada kampus terpilih
+  useEffect(() => {
+    getStudyPrograms(universityId || undefined)
+      .then((programs) => setStudyPrograms(programs))
+      .catch((err: unknown) => console.error('Gagal memuat prodi:', err));
+  }, [universityId]);
+
+  // Kembali ke halaman 1 saat filter berubah
+  useEffect(() => {
+    setMeta((prev) => (prev.page === 1 ? prev : { ...prev, page: 1 }));
+  }, [search, type, cohort, universityId, districtId, studyProgramId]);
 
   // Fetch data direktori
   const fetchMembersList = useCallback(async () => {
@@ -45,6 +59,7 @@ export function DirektoriPage() {
           cohort: cohort ? parseInt(cohort) : undefined,
           universityId: universityId || undefined,
           districtId: districtId || undefined,
+          studyProgramId: studyProgramId || undefined,
           page: meta.page,
           limit: meta.limit,
         },
@@ -57,7 +72,7 @@ export function DirektoriPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, type, cohort, universityId, districtId, meta.page, meta.limit, token]);
+  }, [search, type, cohort, universityId, districtId, studyProgramId, meta.page, meta.limit, token]);
 
   useEffect(() => {
     fetchMembersList();
@@ -74,9 +89,12 @@ export function DirektoriPage() {
     setCohort('');
     setUniversityId('');
     setDistrictId('');
+    setStudyProgramId('');
+    setMeta((prev) => ({ ...prev, page: 1 }));
   };
 
-  const hasActiveFilters = Boolean(search || type !== 'all' || cohort || universityId || districtId);
+  const hasActiveFilters = Boolean(search || type !== 'all' || cohort || universityId || districtId || studyProgramId);
+  const totalPages = Math.max(1, Math.ceil(meta.total / meta.limit));
 
   return (
     <div className="bg-[#FAF8F5] min-h-screen py-10 px-4 sm:px-6">
@@ -147,19 +165,39 @@ export function DirektoriPage() {
           </div>
 
           {/* Baris Filter Terperinci */}
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-1">
+          <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 pt-1">
             {/* Filter Universitas */}
             <div>
               <label className="block text-[11px] font-semibold text-slate-500 mb-1">Perguruan Tinggi</label>
               <select
                 value={universityId}
-                onChange={(e) => setUniversityId(e.target.value)}
+                onChange={(e) => {
+                  setUniversityId(e.target.value);
+                  setStudyProgramId('');
+                }}
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-[#D97706]"
               >
                 <option value="">Semua Kampus</option>
                 {universities.map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.abbreviation || u.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Filter Program Studi */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-500 mb-1">Program Studi</label>
+              <select
+                value={studyProgramId}
+                onChange={(e) => setStudyProgramId(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-[#D97706]"
+              >
+                <option value="">Semua Prodi</option>
+                {studyPrograms.map((sp) => (
+                  <option key={sp.id} value={sp.id}>
+                    {sp.name}
                   </option>
                 ))}
               </select>
@@ -336,6 +374,35 @@ export function DirektoriPage() {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* Kontrol Pagination */}
+        {!loading && members.length > 0 && (
+          <div className="flex items-center justify-between gap-3 pt-2">
+            <p className="text-xs text-slate-500">
+              Halaman {meta.page} dari {totalPages} · {meta.total} anggota
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setMeta((prev) => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
+                disabled={meta.page <= 1}
+                className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              >
+                Sebelumnya
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setMeta((prev) => ({ ...prev, page: Math.min(totalPages, prev.page + 1) }))
+                }
+                disabled={meta.page >= totalPages}
+                className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              >
+                Berikutnya
+              </button>
+            </div>
           </div>
         )}
       </div>

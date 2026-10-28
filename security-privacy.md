@@ -31,6 +31,19 @@ Sebagai organisasi yang memproses data pribadi mahasiswa dan pelajar, KAPPAMA me
 | **Data Exfiltration oleh Pihak Ketiga** | Kebocoran data direktori | Seluruh endpoint direktori `/api/members/*` mewajibkan token JWT Clerk dengan status keanggotaan `active`; pencarian tidak diindeks mesin pencari (`robots.txt: Disallow /anggota/`, `noindex`) |
 | **Penyalahgunaan Akun Admin** | Admin mengekspor atau menyunting data tanpa tanggung jawab | Setiap aktivitas ekspor data, persetujuan, penolakan, penangguhan (*suspend*), dan perubahan peran dicatat permanen di `audit_logs` |
 | **Penyusupan Berkas Unggahan** | Unggahan malware / eksekusi skrip berbahaya lewat file gambar | Validasi MIME type & ekstensi gambar; upload menggunakan direct signed upload Cloudinary berumur pendek yang dibatasi folder dan ukuran; `CLOUDINARY_API_SECRET` tersimpan aman di server dan tidak pernah terekspos ke klien |
+| **Pemalsuan Identitas / Sesi** | Penyerang mengaku sebagai anggota atau admin | Server hanya menerima JWT Clerk yang ditandatangani Clerk (RS256, JWKS `https://api.clerk.com/v1/jwks`, cek `exp`/`nbf`). Email diambil dari Clerk Backend API dan wajib berstatus `verified`. Header `X-Clerk-User-Id` dan `X-User-Email` diabaikan sepenuhnya. Tanpa `CLERK_SECRET_KEY`, semua endpoint terautentikasi gagal tertutup (`401`). |
+| **Verifikasi Bot Gagal Terbuka** | Pendaftaran tanpa Turnstile saat konfigurasi kosong | `verifyTurnstileToken()` fail-closed: `TURNSTILE_SECRET_KEY` kosong atau `siteverify` gagal berarti `400 BOT_VERIFICATION_FAILED`. Pintasan token uji dihapus; kunci uji Cloudflare tetap lewat `siteverify`. |
+
+### 2.1 Cakupan Audit Log Wajib
+
+| Aksi | Aktor | Data yang dicatat | Data pribadi yang DILARANG dicatat |
+|---|---|---|---|
+| `ONBOARDING_SUBMITTED` | Pendaftar | tipe anggota, tahun angkatan | nama, WA, alamat, email |
+| `MEMBER_APPROVED` / `MEMBER_REJECTED` | Admin | tipe persetujuan, penanda `reasonProvided` | teks alasan penolakan, nama, WA |
+| `MEMBER_SUSPENDED` / `MEMBER_RESTORED` | Admin | status tujuan | data profil |
+| `USER_ROLE_CHANGED` | Super Admin | peran lama dan baru | email/nama pengguna |
+| `SUPER_ADMIN_BOOTSTRAPPED` | Sistem | sumber bootstrap (`bootstrap_email`) | email bootstrap |
+| `ADMIN_VIEWED_ADDRESS_DETAIL` | Admin | ID profil, nama field (`address_detail`) | isi alamat |
 
 ---
 

@@ -64,6 +64,22 @@ pnpm dev
 pnpm dev:functions
 ```
 
+### 5. Seed Data Master
+```bash
+pnpm db:seed
+```
+Mengisi 12 kecamatan + 172 desa/kelurahan Pacitan (sumber: BPS SIG Bridging API, LPPD 2024 Tabel 1.4, Perda Pacitan No. 6/2022), kampus, prodi, industri, periode, dan profil organisasi. Skrip idempotent.
+
+Seed anggota dummy terpisah dan **tidak** dijalankan otomatis:
+```bash
+SEED_DUMMY_MEMBERS=true node db/seed-members.js
+```
+Semua baris dummy ditandai `users.clerk_user_id` berawalan `user_dummy_`; hapus dengan `DELETE FROM users WHERE clerk_user_id LIKE 'user_dummy_%';`.
+
+### 6. Verifikasi Sesi & Turnstile
+- Sesi Clerk diverifikasi di server lewat JWKS + Clerk Backend API; header `X-Clerk-User-Id`/`X-User-Email` tidak dipakai.
+- Onboarding fail-closed: tanpa `TURNSTILE_SECRET_KEY` atau saat `siteverify` gagal, pendaftaran ditolak `400 BOT_VERIFICATION_FAILED`.
+
 ---
 
 ## 📚 Dokumentasi Proyek

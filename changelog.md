@@ -6,6 +6,28 @@ Format ini mengacu pada [Keep a Changelog](https://keepachangelog.com/id/1.1.0/)
 ---
 
 ## [Unreleased]
+### Direncanakan
+- Fase 4: Panel Admin & Manajemen Organisasi (CRUD konten, statistik, ekspor data).
+
+---
+
+## [0.4.0] - 2026-10-28
+### Ditambahkan
+- **Verifikasi Sesi Clerk di Server:** Modul baru `functions/lib/clerk-auth.ts` memverifikasi JWT RS256 lewat JWKS Clerk (cache 5 menit) dan mengambil email terverifikasi dari Clerk Backend API. Header `X-Clerk-User-Id`/`X-User-Email` dan decode JWT tanpa verifikasi dihapus. Bootstrap Super Admin hanya dari email Google terverifikasi yang cocok dengan `BOOTSTRAP_SUPER_ADMIN_EMAIL`, tercatat sebagai `SUPER_ADMIN_BOOTSTRAPPED`.
+- **Widget Turnstile Nyata:** `src/components/auth/TurnstileWidget.tsx` merender widget eksplisit dengan `VITE_TURNSTILE_SITE_KEY`; token hardcoded di `OnboardingPage` dihapus dan form menolak submit tanpa token.
+- **Endpoint Admin Baru:** `POST /api/admin/members/:id/suspend`, `POST /api/admin/members/:id/restore`, dan `PUT /api/admin/users/:id/role` (khusus Super Admin, guard `409 LAST_SUPER_ADMIN`).
+- **Audit Tambahan:** `ADMIN_VIEWED_ADDRESS_DETAIL` dicatat setiap admin membuka alamat detail anggota, tanpa menyimpan isi alamat.
+- **Direktori:** filter `studyProgramId` di server dan UI, `meta.total` via `COUNT(*) OVER()`, kontrol pagination 20 per halaman, dan reset ke halaman 1 saat filter berubah.
+- **Seed Wilayah Resmi:** `db/seed/pacitan-regions.json` ditulis ulang dari BPS SIG Bridging API + LPPD 2024 Tabel 1.4 + Perda Pacitan No. 6/2022. Total 12 kecamatan, 172 desa/kelurahan (167 desa + 5 kelurahan), sudah dijalankan ke Neon.
+- **Uji Integrasi:** `functions/api-authz.test.ts` (22 test) mencakup 401/403 direktori, IDOR alamat detail, peran Admin Konten vs Super Admin, guard Super Admin terakhir, auto-approve 23:59/24:00/24:01, tolak lalu ajukan ulang, tangguhkan setelah auto-aktif, dan Turnstile fail-closed.
+
+### Diubah
+- **Detail Anggota:** hanya pemilik, anggota `active`, atau admin yang boleh mengakses (mencegah IDOR oleh anggota `pending`/`rejected`).
+- **Audit Penolakan:** metadata tidak lagi menyimpan teks alasan, hanya `{ reasonProvided: true }`.
+- **Seed Anggota Dummy:** `db/seed-members.js` menolak berjalan tanpa `SEED_DUMMY_MEMBERS=true`; semua baris dummy ditandai `clerk_user_id` berawalan `user_dummy_`.
+- **`.env`/`.dev.vars`:** `.env` hanya tiga variabel publik; `.dev.vars` memuat tujuh nama baku (`DATABASE_URL`, `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `TURNSTILE_SECRET_KEY`, `CLOUDINARY_URL`, `BOOTSTRAP_SUPER_ADMIN_EMAIL`, `EMAIL_ENABLED`). Semua variabel rahasia berawalan `VITE_` dihapus.
+- **Dokumentasi:** `api-spec.md`, `database-schema.md`, `security-privacy.md`, `arsitektur.md` (ADR-005, ADR-006), `testing-checklist.md`, `roadmap.md`, dan `README.md` diperbarui.
+
 ### Diperbaiki
 - **Layar Putih Clerk:** Menghapus fallback kunci contoh `pk_test_sample_kappama_key` di `src/main.tsx`. Bila `VITE_CLERK_PUBLISHABLE_KEY` kosong, `ClerkProvider` tidak dipasang, seluruh halaman publik tetap dirender, dan pengguna melihat pesan "Konfigurasi login belum lengkap" (banner layout + halaman `/daftar`).
 - **Error Boundary Root:** Menambahkan `ErrorBoundary` di `src/main.tsx` agar galat render menampilkan halaman pemulihan, bukan layar putih.

@@ -146,12 +146,18 @@ Semua endpoint ini dapat diakses oleh siapa saja (**Pengunjung**, tanpa otentika
 - **`PUT /api/me/profile`**: Memperbarui profil sendiri (termasuk transisi `active` -> `alumni`).
 
 ### 3.3 Direktori Anggota
-- **`GET /api/members?type=active&university=&district=&cohort=&search=&page=1`**
-  - **Akses:** Khusus Anggota Login yang berstatus `active` (diverifikasi via `getEffectiveStatus()`).
-  - **Catatan Keamanan:** Kolom `address_detail` disaring (tidak disertakan). Nomor WA & email di-null-kan jika `hide_contact === true`.
+- **`GET /api/members?type=active&universityId=&studyProgramId=&districtId=&cohort=&search=&page=1&limit=20`**
+  - **Akses:** Khusus Anggota Login yang berstatus `active` (diverifikasi via `getEffectiveStatus()`), atau admin (`content_admin`/`super_admin`).
+  - **Respon 200:** `meta: { page, limit, count, total }`; `total` dihitung dengan `COUNT(*) OVER()`.
+  - **Catatan Keamanan:** Kolom `address_detail` tidak pernah disertakan. Nomor WA & email di-null-kan jika `hide_contact === true` (kecuali admin).
 
 - **`GET /api/members/:username`**
-  - **Akses:** Khusus Anggota Login berstatus `active`.
+  - **Akses:** Anggota Login berstatus `active`, atau admin. Anggota `pending`/`rejected`/`suspended` menerima `403` (mencegah IDOR).
+  - **Catatan Keamanan:** `addressDetail` hanya dikembalikan ke pemilik profil dan admin. Setiap akses admin ke alamat detail dicatat sebagai `ADMIN_VIEWED_ADDRESS_DETAIL` tanpa menyimpan isi alamat.
+
+### 3.4 Verifikasi Sesi
+- Sesi diverifikasi di server: tanda tangan JWT Clerk (RS256, JWKS `https://api.clerk.com/v1/jwks`) dan email terverifikasi diambil dari Clerk Backend API. Header `X-Clerk-User-Id` / `X-User-Email` tidak dipercaya.
+- `POST /api/me/onboarding` fail-closed: bila `TURNSTILE_SECRET_KEY` kosong atau `siteverify` gagal, respon `400 BOT_VERIFICATION_FAILED`. Kunci uji Cloudflare tetap diverifikasi lewat `siteverify`, bukan pintasan.
 
 ---
 
@@ -168,10 +174,9 @@ Semua endpoint ini dapat diakses oleh siapa saja (**Pengunjung**, tanpa otentika
   - **Body:** `{ "reason": "Data kecamatan bukan wilayah Pacitan" }` (Alasan wajib diisi).
 
 ### 4.2 Manajemen Keanggotaan
-- **`GET /api/admin/members`**: Daftar semua anggota (lengkap dengan alamat detail untuk audit).
-- **`PUT /api/admin/members/:id`**: Sunting data anggota oleh admin (tercatat di `audit_logs`).
-- **`POST /api/admin/members/:id/suspend`**: Nonaktifkan status akun anggota.
-- **`POST /api/admin/members/:id/restore`**: Mengaktifkan kembali akun yang disuspend.
+- **`POST /api/admin/members/:id/suspend`**: Nonaktifkan anggota `active`/`pending` menjadi `suspended`; mencatat audit `MEMBER_SUSPENDED`.
+- **`POST /api/admin/members/:id/restore`**: Mengaktifkan kembali anggota `suspended`; mencatat audit `MEMBER_RESTORED`.
+- **Akses:** `content_admin`, `super_admin`.
 
 ### 4.3 CRUD Konten (Proker, Galeri, Profil, AD/ART)
 - `POST/PUT/DELETE /api/admin/programs`
@@ -186,8 +191,7 @@ Semua endpoint ini dapat diakses oleh siapa saja (**Pengunjung**, tanpa otentika
 ## 5. Kelompok Endpoint Khusus Super Admin (`/api/admin/*`)
 
 - **`GET /api/admin/stats`**: Metrik lengkap analitik organisasi dan tren pendaftar.
-- **`GET /api/admin/roles`**: Daftar pengguna berstatus admin.
-- **`PUT /api/admin/roles/:userId`**: Mengangkat / mencabut peran `content_admin` atau `super_admin`. (Ditolak jika mencabut super admin terakhir).
+- **`PUT /api/admin/users/:id/role`**: Mengubah peran pengguna (`member`, `content_admin`, `super_admin`). Body: `{ "role": "content_admin" }`. Respon `409 LAST_SUPER_ADMIN` bila mencabut Super Admin terakhir. Mencatat audit `USER_ROLE_CHANGED` (hanya peran lama/baru, tanpa data pribadi).
 - **`GET /api/admin/exports/members?format=csv`**: Ekspor data lengkap anggota/alumni (wajib konfirmasi & tercatat di audit log).
 - **`GET /api/admin/audit-logs`**: Melihat log jejak audit aktivitas sensitif admin.
 - **`POST/PUT/DELETE /api/admin/master-data/:entity`**: Penyesuaian master kampus, prodi, dan industri.

@@ -10,6 +10,7 @@ import {
   submitOnboarding,
 } from '../../services/api';
 import { ShieldCheck, UserCheck, AlertCircle, ArrowRight } from 'lucide-react';
+import { TurnstileWidget } from '../../components/auth/TurnstileWidget';
 
 export function OnboardingPage() {
   const { isSignedIn, token, refetchProfile, user } = useAppAuth();
@@ -39,6 +40,7 @@ export function OnboardingPage() {
   const [addressDetail, setAddressDetail] = useState('');
   const [hideContact, setHideContact] = useState(false);
   const [consentAgreed, setConsentAgreed] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
   // Alumni fields
   const [graduationYear, setGraduationYear] = useState<number>(new Date().getFullYear());
@@ -110,6 +112,11 @@ export function OnboardingPage() {
       return;
     }
 
+    if (!turnstileToken) {
+      setErrorMessage('Selesaikan verifikasi "bukan robot" terlebih dahulu.');
+      return;
+    }
+
     try {
       setIsSubmitting(true);
 
@@ -129,7 +136,7 @@ export function OnboardingPage() {
         villageId,
         addressDetail,
         hideContact,
-        turnstileToken: '1x00000000000000000000AA', // Test token dev mode
+        turnstileToken: turnstileToken ?? '',
         consentAgreed: true,
         consentVersion: '2026.1',
         ...(memberType === 'alumni' && {
@@ -576,6 +583,7 @@ export function OnboardingPage() {
 
           {/* 6. Persetujuan Privasi UU PDP */}
           <div className="pt-4 border-t border-slate-100 bg-slate-50 p-4 rounded-2xl space-y-3">
+            <TurnstileWidget onToken={setTurnstileToken} />
             <label className="flex items-start gap-3 cursor-pointer">
               <input
                 type="checkbox"

@@ -159,6 +159,7 @@ export interface MemberFilterParams {
   type?: 'all' | 'active' | 'alumni';
   cohort?: number;
   universityId?: string;
+  studyProgramId?: string;
   districtId?: string;
   page?: number;
   limit?: number;
@@ -170,6 +171,7 @@ export async function getMembers(params: MemberFilterParams = {}, token?: string
   if (params.type && params.type !== 'all') searchParams.set('type', params.type);
   if (params.cohort) searchParams.set('cohort', params.cohort.toString());
   if (params.universityId) searchParams.set('universityId', params.universityId);
+  if (params.studyProgramId) searchParams.set('studyProgramId', params.studyProgramId);
   if (params.districtId) searchParams.set('districtId', params.districtId);
   if (params.page) searchParams.set('page', params.page.toString());
   if (params.limit) searchParams.set('limit', params.limit.toString());
@@ -177,7 +179,7 @@ export async function getMembers(params: MemberFilterParams = {}, token?: string
   const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
   return fetchApi<{
     data: Array<ApiMemberProfile>;
-    meta: { page: number; limit: number; count: number };
+    meta: { page: number; limit: number; count: number; total: number };
   }>(`/members${query}`, {}, token);
 }
 
