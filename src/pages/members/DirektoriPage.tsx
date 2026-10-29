@@ -24,7 +24,7 @@ export function DirektoriPage() {
   // Master data filter
   const [districts, setDistricts] = useState<Array<{ id: string; name: string }>>([]);
   const [universities, setUniversities] = useState<Array<{ id: string; name: string; abbreviation: string }>>([]);
-  const [studyPrograms, setStudyPrograms] = useState<Array<{ id: string; name: string }>>([]);
+  const [studyPrograms, setStudyPrograms] = useState<Array<{ id: string; name: string; degree_level?: string }>>([]);
 
   // Load master data filter
   useEffect(() => {
@@ -197,7 +197,7 @@ export function DirektoriPage() {
                 <option value="">Semua Prodi</option>
                 {studyPrograms.map((sp) => (
                   <option key={sp.id} value={sp.id}>
-                    {sp.name}
+                    {sp.degree_level ? `${sp.degree_level} ${sp.name}` : sp.name}
                   </option>
                 ))}
               </select>

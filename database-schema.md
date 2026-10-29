@@ -235,6 +235,12 @@ Untuk menjamin kueri cepat pada skala pertumbuhan data dan pencegahan scanning l
 4. `audit_logs`:
    - `idx_audit_logs_actor_created`: `(actor_id, created_at DESC)`
    - `idx_audit_logs_entity`: `(entity, entity_id)`
+5. Master data (pencegahan duplikat, lihat Bagian 6):
+   - `idx_universities_name`: `(name)` UNIQUE
+   - `idx_study_programs_univ_name`: `(university_id, name, degree_level)` UNIQUE
+   - `idx_industries_name`: `(name)` UNIQUE
+   - `idx_districts_name`: `(name)` UNIQUE
+   - `idx_villages_district_name`: `(district_id, name)` UNIQUE
 
 ---
 
@@ -299,11 +305,71 @@ Data lengkap 172 desa/kelurahan di-seed dari berkas `db/seed/pacitan-regions.jso
 4. Seed master data (`pnpm db:seed`) mengeksekusi urutan:
    - Master 12 Kecamatan dan 172 Desa/Kelurahan Pacitan (idempotent, `ON CONFLICT DO UPDATE`).
    - Master 14 Perguruan Tinggi di Malang + opsi "Lainnya".
-   - Master 53 Program Studi populer per universitas.
+   - Master 84 Program Studi populer per universitas (36 di antaranya Politeknik Negeri Malang).
    - Master 13 Bidang Industri umum.
    - Periode kepengurusan saat ini (`org_periods`).
    - Placeholder profil organisasi (`org_profile`).
+   Semua langkah seed idempotent: dijalankan dua kali berturut-turut tidak menambah baris (jumlah tetap 14/84/13/12/172, `org_periods` 1, `org_leaders` 4).
 5. Seed anggota dummy (`node db/seed-members.js`) **tidak** dijalankan otomatis. Skrip menolak berjalan kecuali `SEED_DUMMY_MEMBERS=true`, dan semua baris dummy ditandai `users.clerk_user_id` berawalan `user_dummy_`. Hapus dengan:
    ```sql
    DELETE FROM users WHERE clerk_user_id LIKE 'user_dummy_%';
    ```
+
+---
+
+## 6. Deduplikasi Master Data & Sumber Program Studi
+
+### 6.1 Migrasi Deduplikasi (`0001_dedupe_master_data.sql`)
+
+Seed lama memakai `ON CONFLICT DO NOTHING` tanpa constraint UNIQUE, sehingga setiap seed ulang menambah baris. Migrasi `0001_dedupe_master_data.sql` berjalan dalam satu transaksi dan melakukan:
+
+1. Memilih satu baris "pemenang" per entitas (`created_at` paling awal, lalu `id`).
+2. Mengarahkan ulang foreign key sebelum baris duplikat dihapus:
+   - `study_programs.university_id`, `member_profiles.university_id`, `programs.university_id` → universitas pemenang (wajib lebih dulu karena FK memakai `ON DELETE CASCADE`).
+   - `member_profiles.study_program_id` → prodi pemenang.
+   - `alumni_details.industry_id` → industri pemenang.
+3. Menghapus baris duplikat.
+4. Memasang lima indeks UNIQUE (lihat Bagian 2 poin 5).
+
+Jumlah baris sebelum → sesudah migrasi:
+
+| Tabel | Sebelum | Sesudah |
+|---|---|---|
+| `universities` | 28 | 14 |
+| `study_programs` | 106 | 53 |
+| `industries` | 26 | 13 |
+| `districts` | 12 | 12 |
+| `villages` | 172 | 172 |
+
+Pemeriksaan pasca-migrasi: 0 grup duplikat pada kelima tabel. Duplikat lama pada `org_periods` (2 → 1) dan `org_leaders` (8 → 4) juga dibersihkan; seed kini memakai `WHERE NOT EXISTS` sehingga tidak menambah baris lagi.
+
+### 6.2 Batas UNIQUE Program Studi
+
+`0002_study_program_degree_unique.sql` mengganti indeks `idx_study_programs_univ_name` menjadi `(university_id, name, degree_level)`. Alasannya: satu nama prodi sah muncul di jenjang berbeda, mis. **D4 Teknik Elektronika** dan **D3 Teknik Elektronika** di Polinema. Tanpa `degree_level` di constraint, salah satu jenjang akan ditolak.
+
+Seed memakai `ON CONFLICT (university_id, name, degree_level) DO UPDATE`, sehingga rerun hanya memperbarui `degree_level`/`is_active`.
+
+### 6.3 Sumber Data Program Studi Politeknik Negeri Malang
+
+Diambil dan diverifikasi pada **29 Oktober 2026** dari sumber resmi Polinema:
+
+- Footer situs utama (daftar Program Sarjana, Diploma III, Diploma II, Magister, Doktor): <https://www.polinema.ac.id/>
+- Program Sarjana Terapan: <https://www.polinema.ac.id/akademik/mahasiswa/program-sarjana/>
+- Halaman jurusan:
+  - Teknik Elektro: <https://www.polinema.ac.id/jurusan/jurusan-teknik-elektro/>
+  - Teknik Mesin: <https://www.polinema.ac.id/jurusan/jurusan-teknik-mesin/>
+  - Teknik Sipil: <https://www.polinema.ac.id/jurusan/teknik-sipil/>
+  - Teknik Kimia: <https://www.polinema.ac.id/jurusan/jurusan-teknik-kimia/>
+  - Akuntansi: <https://www.polinema.ac.id/jurusan/akuntansi/>
+  - Administrasi Niaga: <https://www.polinema.ac.id/jurusan/administrasi-niaga/>
+  - Teknologi Informasi: <https://www.polinema.ac.id/jurusan/teknologi-informasi/>
+- SPMB 2026 (mengonfirmasi prodi S2/S3 terapan dan prodi baru): <https://spmb.polinema.ac.id/portal/informasi_2026/s2s3_terapan_gel2>, <https://spmb.polinema.ac.id/portal/informasi_2026/mandiri_utbk_tes>
+
+Hasil: **36 baris** `study_programs` untuk kampus utama Malang — 17 D4, 11 D3, 1 D2, 5 S2, 1 S3, plus opsi "Lainnya". Nama prodi ditulis tanpa prefiks jenjang karena jenjang disimpan terpisah di `degree_level`.
+
+Cakupan dan batasan:
+- Hanya kampus utama Malang. Program PSDKU (Kediri, Lumajang, Pamekasan) tidak dimasukkan karena lokasinya berbeda dan belum ada entri kampus terpisah.
+- Varian kelas internasional, double degree, dan kelas kerja sama tidak dimasukkan.
+- **PDDikti belum bisa dicocokkan**: `https://api-pddikti.kemdiktisaintek.go.id/api/pt/prodi/005023` membalas `401`, dan situs `pddikti.kemdiktisaintek.go.id` berbasis JavaScript sehingga daftarnya tidak terbaca. Kode PT Polinema: `005023`. Pencocokan PDDikti perlu diulang saat akses tersedia.
+- Kampus lain masih memakai daftar prodi populer + "Lainnya" (belum katalog lengkap).
+

@@ -74,16 +74,15 @@ async function seed() {
     const res = await sql`
       INSERT INTO universities (name, abbreviation, city, is_active)
       VALUES (${u.name}, ${u.abbreviation}, ${u.city}, true)
-      ON CONFLICT DO NOTHING
+      ON CONFLICT (name) DO UPDATE SET
+        abbreviation = EXCLUDED.abbreviation,
+        city = EXCLUDED.city,
+        is_active = true,
+        updated_at = NOW()
       RETURNING id, abbreviation
     `;
     if (res.length > 0) {
       univMap.set(res[0].abbreviation, res[0].id);
-    } else {
-      const existing = await sql`SELECT id, abbreviation FROM universities WHERE abbreviation = ${u.abbreviation} LIMIT 1`;
-      if (existing.length > 0) {
-        univMap.set(existing[0].abbreviation, existing[0].id);
-      }
     }
   }
 
@@ -94,7 +93,10 @@ async function seed() {
       await sql`
         INSERT INTO study_programs (university_id, name, degree_level, is_active)
         VALUES (${univId}, ${sp.name}, ${sp.degreeLevel}, true)
-        ON CONFLICT DO NOTHING
+        ON CONFLICT (university_id, name, degree_level) DO UPDATE SET
+          degree_level = EXCLUDED.degree_level,
+          is_active = true,
+          updated_at = NOW()
       `;
     }
   }
@@ -104,7 +106,9 @@ async function seed() {
     await sql`
       INSERT INTO industries (name, is_active)
       VALUES (${ind}, true)
-      ON CONFLICT DO NOTHING
+      ON CONFLICT (name) DO UPDATE SET
+        is_active = true,
+        updated_at = NOW()
     `;
   }
 
@@ -112,8 +116,10 @@ async function seed() {
   console.log('🏛️ Menyiapkan periode dan struktur kepengurusan awal...');
   const periodRes = await sql`
     INSERT INTO org_periods (period_label, start_year, end_year, is_current)
-    VALUES ('2026/2027', 2026, 2027, true)
-    ON CONFLICT DO NOTHING
+    SELECT '2026/2027', 2026, 2027, true
+    WHERE NOT EXISTS (
+      SELECT 1 FROM org_periods WHERE period_label = '2026/2027'
+    )
     RETURNING id
   `;
   const periodId = periodRes.length > 0 ? periodRes[0].id : (await sql`SELECT id FROM org_periods WHERE period_label = '2026/2027' LIMIT 1`)[0]?.id;
@@ -129,8 +135,11 @@ async function seed() {
     for (const l of leaders) {
       await sql`
         INSERT INTO org_leaders (period_id, position, name, campus_study, sort_order)
-        VALUES (${periodId}, ${l.position}, ${l.name}, ${l.campus}, ${l.order})
-        ON CONFLICT DO NOTHING
+        SELECT ${periodId}, ${l.position}, ${l.name}, ${l.campus}, ${l.order}
+        WHERE NOT EXISTS (
+          SELECT 1 FROM org_leaders
+          WHERE period_id = ${periodId} AND position = ${l.position}
+        )
       `;
     }
   }

@@ -13,14 +13,14 @@ import { ShieldCheck, UserCheck, AlertCircle, ArrowRight } from 'lucide-react';
 import { TurnstileWidget } from '../../components/auth/TurnstileWidget';
 
 export function OnboardingPage() {
-  const { isSignedIn, token, refetchProfile, user } = useAppAuth();
+  const { isSignedIn, refetchProfile, user } = useAppAuth();
   const navigate = useNavigate();
 
   // State master data
   const [districts, setDistricts] = useState<Array<{ id: string; name: string }>>([]);
   const [villages, setVillages] = useState<Array<{ id: string; name: string }>>([]);
   const [universities, setUniversities] = useState<Array<{ id: string; name: string; abbreviation: string }>>([]);
-  const [studyPrograms, setStudyPrograms] = useState<Array<{ id: string; name: string }>>([]);
+  const [studyPrograms, setStudyPrograms] = useState<Array<{ id: string; name: string; degree_level?: string }>>([]);
   const [industries, setIndustries] = useState<Array<{ id: string; name: string }>>([]);
 
   // Form state
@@ -149,7 +149,8 @@ export function OnboardingPage() {
         }),
       };
 
-      await submitOnboarding(payload, token);
+      // Token diambil otomatis oleh api.ts (segar, dengan retry sekali saat 401).
+      await submitOnboarding(payload);
       await refetchProfile();
       navigate('/status');
     } catch (err: unknown) {
@@ -346,7 +347,7 @@ export function OnboardingPage() {
                   <option value="">Pilih Program Studi...</option>
                   {studyPrograms.map((sp) => (
                     <option key={sp.id} value={sp.id}>
-                      {sp.name}
+                      {sp.degree_level ? `${sp.degree_level} ${sp.name}` : sp.name}
                     </option>
                   ))}
                 </select>

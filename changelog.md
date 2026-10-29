@@ -9,6 +9,19 @@ Format ini mengacu pada [Keep a Changelog](https://keepachangelog.com/id/1.1.0/)
 ### Direncanakan
 - Fase 4: Panel Admin & Manajemen Organisasi (CRUD konten, statistik, ekspor data).
 
+### Diperbaiki
+- **BUG 1 — Autentikasi "Silakan login" palsu:** `functions/lib/clerk-auth.ts` ditulis ulang mengembalikan 10 kode alasan aman sebagai `error.code` (tanpa token/email), dengan `AUTH_ERROR_MESSAGES` per kode, toleransi 10 detik exp/nbf/iat, issuer dari `CLERK_PUBLISHABLE_KEY`, dan azp via `CLERK_AUTHORIZED_PARTIES` (loopback diizinkan pada `pk_test_`). Log server hanya `[auth] code=<KODE> path=<path>`; token, email, dan data pribadi tidak pernah dicatat. `functions/[[path]].ts`: semua 12 endpoint pakai `getAuth` dengan hasil ber-kode (`SERVER_MISCONFIGURED` → 500 saat env belum lengkap); 5 lookup publik dibungkus try/catch → `{ data: [] }` + log `code=LOOKUP_DB_ERROR`, dedupe `DISTINCT ON`, urut abjad. `src/services/api.ts`: `setApiTokenProvider`, token segar per permintaan, retry sekali pada `401` dengan token baru. `src/components/auth/AuthContext.tsx`: pasang provider setelah Clerk siap, `skipCache`, dan gagal ambil profil tidak lagi menandai `incomplete`. Pesan "Silakan login" hanya untuk `TOKEN_MISSING` (benar-benar belum login).
+- **BUG 2 — Duplikat master data akibat seed berulang:** migrasi `0001_dedupe_master_data.sql` (satu transaksi: pilih pemenang per entitas, arahkan ulang FK sebelum hapus, 5 indeks UNIQUE) dan `0002_study_program_degree_unique.sql` (constraint 3 kolom `university_id, name, degree_level` karena nama prodi boleh sama antarjenjang, mis. D4/D3 Teknik Elektronika). Semua seed idempotent (`ON CONFLICT ... DO UPDATE` / `WHERE NOT EXISTS`). Disediakan 2× berturut-turut: jumlah tetap `universities 14, study_programs 84, industries 13, districts 12, villages 172`; `org_periods` 1, `org_leaders` 4.
+- **BUG 3 — Program studi Politeknik Negeri Malang belum lengkap:** diisi 36 entri kampus utama Malang (17 D4, 11 D3, 1 D2, 5 S2, 1 S3 + opsi "Lainnya") dari sumber resmi polinema.ac.id (footer, halaman akademik, halaman masing-masing jurusan), diverifikasi 29 Oktober 2026. Nama kanonik ditulis tanpa prefiks jenjang karena `degree_level` disimpan terpisah; label dropdown menampilkan jenjang (mis. `D4 Teknik Elektronika`). PDDikti (`api-pddikti.kemdiktisaintek.go.id/api/pt/prodi/005023`) mengembalikan `401`, sehingga pencocokan PDDikti belum dilakukan dan dicatat sebagai keterbatasan di `database-schema.md`.
+
+### Diubah
+- Lookup master data sekarang dikembalikan unik, urut abjad, dan `Lainnya` selalu di akhir; klien wajib menampilkan `degree_level` di label prodi.
+- Pesan gagal autentikasi disesuaikan dengan `error.code`; "Silakan login" hanya muncul bagi pengguna yang memang belum punya sesi Clerk.
+- `database-schema.md` mencatat sumber/URL/tanggal prodi Polinema, catatan PDDikti 401, dan strategi dedupesi + unique constraint.
+
+### Dokumen
+- `api-spec.md`, `database-schema.md`, `testing-checklist.md` diperbarui (kode alasan auth, unique constraint, migrasi dedupe, sumber prodi, cara mengulang uji).
+
 ---
 
 ## [0.4.0] - 2026-10-28

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useUser, useAuth, useClerk } from '@clerk/clerk-react';
-import { getMyProfile, ApiMemberProfile } from '../../services/api';
+import { getMyProfile, setApiTokenProvider, ApiMemberProfile } from '../../services/api';
 import { isClerkConfigured } from '../../config/env';
 
 export interface AuthUserObject {
@@ -72,7 +72,7 @@ function ClerkAuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       setIsLoadingProfile(true);
-      const sessionToken = await getToken().catch(() => null);
+      const sessionToken = await getToken({ skipCache: true }).catch(() => null);
       setToken(sessionToken);
 
       const res = await getMyProfile(sessionToken);
@@ -82,11 +82,19 @@ function ClerkAuthProvider({ children }: { children: React.ReactNode }) {
         setStatus(res.data.status as 'incomplete' | 'pending' | 'active' | 'rejected' | 'suspended');
       }
     } catch {
-      setStatus('incomplete');
+      // Jangan menandai profil "incomplete" saat server gagal: itu memaksa
+      // pengguna yang sudah login kembali ke /onboarding dengan pesan keliru.
     } finally {
       setIsLoadingProfile(false);
     }
   }, [isSignedIn, getToken]);
+
+  // Pasang provider token segar untuk seluruh permintaan API setelah Clerk siap.
+  useEffect(() => {
+    if (!isClerkLoaded) return;
+    setApiTokenProvider(isSignedIn ? () => getToken({ skipCache: true }) : null);
+    return () => setApiTokenProvider(null);
+  }, [isClerkLoaded, isSignedIn, getToken]);
 
   useEffect(() => {
     if (isClerkLoaded) {

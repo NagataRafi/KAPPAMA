@@ -4,7 +4,12 @@ import { neon } from '@neondatabase/serverless';
 import { parseCloudinaryUrl } from '../shared/services/storage/cloudinary-storage';
 import { getEffectiveStatus } from '../shared/utils/effective-status';
 import { onboardingInputSchema } from '../shared/schema/member-schema';
-import { verifyClerkSessionToken, fetchClerkUser } from './lib/clerk-auth';
+import {
+  verifyClerkSessionToken,
+  fetchClerkUser,
+  AUTH_ERROR_MESSAGES,
+  type AuthErrorCode,
+} from './lib/clerk-auth';
 
 export interface Env {
   // Database
@@ -15,6 +20,8 @@ export interface Env {
   CLERK_PUBLISHABLE_KEY?: string;
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?: string;
   CLERK_SECRET_KEY?: string;
+  /** Daftar origin sah dipisah koma, mis. "https://kappama.pages.dev,http://localhost:5173". */
+  CLERK_AUTHORIZED_PARTIES?: string;
 
   // Turnstile
   TURNSTILE_SECRET_KEY?: string;
@@ -107,20 +114,55 @@ interface AuthUser {
   role: 'member' | 'content_admin' | 'super_admin';
 }
 
-async function getAuthUser(c: Context<{ Bindings: Env }>): Promise<AuthUser | null> {
+type AuthOutcome =
+  | { ok: true; user: AuthUser }
+  | { ok: false; code: AuthErrorCode | 'SERVER_MISCONFIGURED'; message: string };
+
+function authFailure(
+  c: Context<{ Bindings: Env }>,
+  code: AuthErrorCode | 'SERVER_MISCONFIGURED'
+): AuthOutcome {
+  // Log hanya kode alasan dan path; token, email, dan data pribadi tidak dicatat.
+  console.warn(`[auth] code=${code} path=${c.req.path}`);
+  return {
+    ok: false,
+    code,
+    message:
+      code === 'SERVER_MISCONFIGURED'
+        ? 'Konfigurasi login server belum lengkap.'
+        : AUTH_ERROR_MESSAGES[code],
+  };
+}
+
+function authErrorResponse(c: Context<{ Bindings: Env }>, outcome: AuthOutcome) {
+  if (outcome.ok) throw new Error('authErrorResponse dipanggil untuk hasil sukses');
+  const status = outcome.code === 'SERVER_MISCONFIGURED' ? 500 : 401;
+  return c.json({ error: { code: outcome.code, message: outcome.message } }, status);
+}
+
+async function getAuth(c: Context<{ Bindings: Env }>): Promise<AuthOutcome> {
   const config = resolveConfig(c.env);
-  if (!config.databaseUrl) return null;
+  if (!config.databaseUrl || !config.clerk.secretKey) {
+    return authFailure(c, 'SERVER_MISCONFIGURED');
+  }
 
   // Hanya token Clerk yang ditandatangani Clerk yang dipercaya. Header klien
   // (X-Clerk-User-Id / X-User-Email) tidak pernah dipakai.
   const authHeader = c.req.header('Authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return authFailure(c, 'TOKEN_MISSING');
 
-  const session = await verifyClerkSessionToken(authHeader.slice(7));
-  if (!session) return null;
+  const verified = await verifyClerkSessionToken(authHeader.slice(7), {
+    publishableKey: config.clerk.publishableKey,
+    authorizedParties: (c.env.CLERK_AUTHORIZED_PARTIES ?? '')
+      .split(',')
+      .map((party) => party.trim())
+      .filter(Boolean),
+  });
+  if (!verified.ok) return authFailure(c, verified.code);
 
-  const clerkUser = await fetchClerkUser(session.userId, config.clerk.secretKey);
-  if (!clerkUser || !clerkUser.email || !clerkUser.emailVerified) return null;
+  const clerkUserResult = await fetchClerkUser(verified.session.userId, config.clerk.secretKey);
+  if (!clerkUserResult.ok) return authFailure(c, clerkUserResult.code);
+  const clerkUser = clerkUserResult.user;
 
   const sql = neon(config.databaseUrl);
   const isBootstrapEmail =
@@ -130,7 +172,7 @@ async function getAuthUser(c: Context<{ Bindings: Env }>): Promise<AuthUser | nu
   let userRows = await sql`
     SELECT id, clerk_user_id, email, role
     FROM users
-    WHERE clerk_user_id = ${session.userId}
+    WHERE clerk_user_id = ${verified.session.userId}
     LIMIT 1
   `;
 
@@ -139,7 +181,7 @@ async function getAuthUser(c: Context<{ Bindings: Env }>): Promise<AuthUser | nu
 
     userRows = await sql`
       INSERT INTO users (clerk_user_id, email, role)
-      VALUES (${session.userId}, ${clerkUser.email}, ${role})
+      VALUES (${verified.session.userId}, ${clerkUser.email}, ${role})
       RETURNING id, clerk_user_id, email, role
     `;
 
@@ -164,10 +206,13 @@ async function getAuthUser(c: Context<{ Bindings: Env }>): Promise<AuthUser | nu
   }
 
   return {
-    id: userRows[0].id,
-    clerkUserId: userRows[0].clerk_user_id,
-    email: userRows[0].email,
-    role: userRows[0].role,
+    ok: true,
+    user: {
+      id: userRows[0].id,
+      clerkUserId: userRows[0].clerk_user_id,
+      email: userRows[0].email,
+      role: userRows[0].role,
+    },
   };
 }
 
@@ -232,77 +277,133 @@ app.get('/health', async (c) => {
 app.get('/lookups/districts', async (c) => {
   const config = resolveConfig(c.env);
   if (!config.databaseUrl) return c.json({ data: [] });
-  const sql = neon(config.databaseUrl);
-  const rows = await sql`SELECT id, name FROM districts ORDER BY id ASC`;
-  return c.json({ data: rows });
+  try {
+    const sql = neon(config.databaseUrl);
+    const rows = await sql`
+      SELECT id, name FROM (
+        SELECT DISTINCT ON (name) id, name FROM districts ORDER BY name ASC, id ASC
+      ) unique_districts
+      ORDER BY name ASC
+    `;
+    return c.json({ data: rows });
+  } catch {
+    console.error('[lookups] code=LOOKUP_DB_ERROR path=/lookups/districts');
+    return c.json({ data: [] });
+  }
 });
 
 app.get('/lookups/villages', async (c) => {
   const config = resolveConfig(c.env);
   if (!config.databaseUrl) return c.json({ data: [] });
   const districtId = c.req.query('districtId');
-  const sql = neon(config.databaseUrl);
-  const rows = districtId
-    ? await sql`SELECT id, district_id, name FROM villages WHERE district_id = ${districtId} ORDER BY name ASC`
-    : await sql`SELECT id, district_id, name FROM villages ORDER BY name ASC`;
-  return c.json({ data: rows });
+  try {
+    const sql = neon(config.databaseUrl);
+    const rows = districtId
+      ? await sql`
+          SELECT id, district_id, name FROM (
+            SELECT DISTINCT ON (district_id, name) id, district_id, name
+            FROM villages
+            WHERE district_id = ${districtId}
+            ORDER BY district_id ASC, name ASC, id ASC
+          ) unique_villages
+          ORDER BY name ASC
+        `
+      : await sql`
+          SELECT id, district_id, name FROM (
+            SELECT DISTINCT ON (district_id, name) id, district_id, name
+            FROM villages
+            ORDER BY district_id ASC, name ASC, id ASC
+          ) unique_villages
+          ORDER BY name ASC
+        `;
+    return c.json({ data: rows });
+  } catch {
+    console.error('[lookups] code=LOOKUP_DB_ERROR path=/lookups/villages');
+    return c.json({ data: [] });
+  }
 });
 
 app.get('/lookups/universities', async (c) => {
   const config = resolveConfig(c.env);
   if (!config.databaseUrl) return c.json({ data: [] });
-  const sql = neon(config.databaseUrl);
-  const rows = await sql`
-    SELECT id, name, abbreviation, city
-    FROM universities
-    WHERE is_active = true
-    ORDER BY CASE WHEN abbreviation = 'Lainnya' THEN 2 ELSE 1 END, name ASC
-  `;
-  return c.json({ data: rows });
+  try {
+    const sql = neon(config.databaseUrl);
+    const rows = await sql`
+      SELECT id, name, abbreviation, city FROM (
+        SELECT DISTINCT ON (name) id, name, abbreviation, city
+        FROM universities
+        WHERE is_active = true
+        ORDER BY name ASC, created_at ASC, id ASC
+      ) unique_universities
+      ORDER BY CASE WHEN abbreviation = 'Lainnya' THEN 2 ELSE 1 END, name ASC
+    `;
+    return c.json({ data: rows });
+  } catch {
+    console.error('[lookups] code=LOOKUP_DB_ERROR path=/lookups/universities');
+    return c.json({ data: [] });
+  }
 });
 
 app.get('/lookups/study-programs', async (c) => {
   const config = resolveConfig(c.env);
   if (!config.databaseUrl) return c.json({ data: [] });
   const universityId = c.req.query('universityId');
-  const sql = neon(config.databaseUrl);
-  const rows = universityId
-    ? await sql`
-        SELECT id, university_id, name, degree_level
-        FROM study_programs
-        WHERE university_id = ${universityId} AND is_active = true
-        ORDER BY CASE WHEN name = 'Lainnya' THEN 2 ELSE 1 END, name ASC
-      `
-    : await sql`
-        SELECT id, university_id, name, degree_level
-        FROM study_programs
-        WHERE is_active = true
-        ORDER BY name ASC
-      `;
-  return c.json({ data: rows });
+  try {
+    const sql = neon(config.databaseUrl);
+    const rows = universityId
+      ? await sql`
+          SELECT id, university_id, name, degree_level FROM (
+            SELECT DISTINCT ON (university_id, name, degree_level) id, university_id, name, degree_level
+            FROM study_programs
+            WHERE university_id = ${universityId} AND is_active = true
+            ORDER BY university_id ASC, name ASC, degree_level ASC, created_at ASC, id ASC
+          ) unique_study_programs
+          ORDER BY CASE WHEN name = 'Lainnya' THEN 2 ELSE 1 END, name ASC
+        `
+      : await sql`
+          SELECT id, university_id, name, degree_level FROM (
+            SELECT DISTINCT ON (university_id, name, degree_level) id, university_id, name, degree_level
+            FROM study_programs
+            WHERE is_active = true
+            ORDER BY university_id ASC, name ASC, degree_level ASC, created_at ASC, id ASC
+          ) unique_study_programs
+          ORDER BY CASE WHEN name = 'Lainnya' THEN 2 ELSE 1 END, name ASC
+        `;
+    return c.json({ data: rows });
+  } catch {
+    console.error('[lookups] code=LOOKUP_DB_ERROR path=/lookups/study-programs');
+    return c.json({ data: [] });
+  }
 });
 
 app.get('/lookups/industries', async (c) => {
   const config = resolveConfig(c.env);
   if (!config.databaseUrl) return c.json({ data: [] });
-  const sql = neon(config.databaseUrl);
-  const rows = await sql`
-    SELECT id, name
-    FROM industries
-    WHERE is_active = true
-    ORDER BY CASE WHEN name = 'Lainnya' THEN 2 ELSE 1 END, name ASC
-  `;
-  return c.json({ data: rows });
+  try {
+    const sql = neon(config.databaseUrl);
+    const rows = await sql`
+      SELECT id, name FROM (
+        SELECT DISTINCT ON (name) id, name
+        FROM industries
+        WHERE is_active = true
+        ORDER BY name ASC, created_at ASC, id ASC
+      ) unique_industries
+      ORDER BY CASE WHEN name = 'Lainnya' THEN 2 ELSE 1 END, name ASC
+    `;
+    return c.json({ data: rows });
+  } catch {
+    console.error('[lookups] code=LOOKUP_DB_ERROR path=/lookups/industries');
+    return c.json({ data: [] });
+  }
 });
 
 // ============================================================================
 // 3. AUTH & PROFIL SAYA (ME) ENDPOINTS
 // ============================================================================
 app.get('/me', async (c) => {
-  const authUser = await getAuthUser(c);
-  if (!authUser) {
-    return c.json({ error: { code: 'UNAUTHORIZED', message: 'Silakan login terlebih dahulu' } }, 401);
-  }
+  const auth = await getAuth(c);
+  if (!auth.ok) return authErrorResponse(c, auth);
+  const authUser = auth.user;
 
   const config = resolveConfig(c.env);
   const sql = neon(config.databaseUrl!);
@@ -367,10 +468,9 @@ app.get('/me', async (c) => {
 });
 
 app.get('/me/status', async (c) => {
-  const authUser = await getAuthUser(c);
-  if (!authUser) {
-    return c.json({ error: { code: 'UNAUTHORIZED', message: 'Silakan login terlebih dahulu' } }, 401);
-  }
+  const auth = await getAuth(c);
+  if (!auth.ok) return authErrorResponse(c, auth);
+  const authUser = auth.user;
 
   const config = resolveConfig(c.env);
   const sql = neon(config.databaseUrl!);
@@ -417,10 +517,9 @@ app.get('/me/status', async (c) => {
 });
 
 app.post('/me/onboarding', async (c) => {
-  const authUser = await getAuthUser(c);
-  if (!authUser) {
-    return c.json({ error: { code: 'UNAUTHORIZED', message: 'Silakan login terlebih dahulu' } }, 401);
-  }
+  const auth = await getAuth(c);
+  if (!auth.ok) return authErrorResponse(c, auth);
+  const authUser = auth.user;
 
   const body = await c.req.json().catch(() => null);
   if (!body) {
@@ -540,10 +639,9 @@ app.post('/me/onboarding', async (c) => {
 
 // Update Profil Mandiri (Khusus Anggota Aktif)
 app.put('/me/profile', async (c) => {
-  const authUser = await getAuthUser(c);
-  if (!authUser) {
-    return c.json({ error: { code: 'UNAUTHORIZED', message: 'Silakan login terlebih dahulu' } }, 401);
-  }
+  const auth = await getAuth(c);
+  if (!auth.ok) return authErrorResponse(c, auth);
+  const authUser = auth.user;
 
   const config = resolveConfig(c.env);
   const sql = neon(config.databaseUrl!);
@@ -598,10 +696,9 @@ app.put('/me/profile', async (c) => {
 // 4. DIREKTORI ANGGOTA & ALUMNI ENDPOINTS (UU PDP COMPLIANT)
 // ============================================================================
 app.get('/members', async (c) => {
-  const authUser = await getAuthUser(c);
-  if (!authUser) {
-    return c.json({ error: { code: 'UNAUTHORIZED', message: 'Login diperlukan untuk melihat direktori anggota' } }, 401);
-  }
+  const auth = await getAuth(c);
+  if (!auth.ok) return authErrorResponse(c, auth);
+  const authUser = auth.user;
 
   const config = resolveConfig(c.env);
   const sql = neon(config.databaseUrl!);
@@ -728,10 +825,9 @@ app.get('/members', async (c) => {
 });
 
 app.get('/members/:username', async (c) => {
-  const authUser = await getAuthUser(c);
-  if (!authUser) {
-    return c.json({ error: { code: 'UNAUTHORIZED', message: 'Login diperlukan' } }, 401);
-  }
+  const auth = await getAuth(c);
+  if (!auth.ok) return authErrorResponse(c, auth);
+  const authUser = auth.user;
 
   const username = c.req.param('username');
   const config = resolveConfig(c.env);
@@ -858,11 +954,11 @@ app.get('/members/:username', async (c) => {
 // 5. ADMIN APPROVALS ENDPOINTS (Lazy Auto-Approve & Manual Approval)
 // ============================================================================
 app.get('/admin/approvals', async (c) => {
-  const authUser = await getAuthUser(c);
-  if (!authUser || (authUser.role !== 'super_admin' && authUser.role !== 'content_admin')) {
+  const auth = await getAuth(c);
+  if (!auth.ok) return authErrorResponse(c, auth);
+  if (!isAdminRole(auth.user.role)) {
     return c.json({ error: { code: 'FORBIDDEN', message: 'Akses ditolak' } }, 403);
   }
-
   const config = resolveConfig(c.env);
   const sql = neon(config.databaseUrl!);
 
@@ -914,10 +1010,12 @@ app.get('/admin/approvals', async (c) => {
 });
 
 app.post('/admin/approvals/:id/approve', async (c) => {
-  const authUser = await getAuthUser(c);
-  if (!authUser || (authUser.role !== 'super_admin' && authUser.role !== 'content_admin')) {
+  const auth = await getAuth(c);
+  if (!auth.ok) return authErrorResponse(c, auth);
+  if (!isAdminRole(auth.user.role)) {
     return c.json({ error: { code: 'FORBIDDEN', message: 'Akses ditolak' } }, 403);
   }
+  const authUser = auth.user;
 
   const id = c.req.param('id');
   const config = resolveConfig(c.env);
@@ -943,10 +1041,12 @@ app.post('/admin/approvals/:id/approve', async (c) => {
 });
 
 app.post('/admin/approvals/:id/reject', async (c) => {
-  const authUser = await getAuthUser(c);
-  if (!authUser || (authUser.role !== 'super_admin' && authUser.role !== 'content_admin')) {
+  const auth = await getAuth(c);
+  if (!auth.ok) return authErrorResponse(c, auth);
+  if (!isAdminRole(auth.user.role)) {
     return c.json({ error: { code: 'FORBIDDEN', message: 'Akses ditolak' } }, 403);
   }
+  const authUser = auth.user;
 
   const id = c.req.param('id');
   const body = await c.req.json().catch(() => ({}));
@@ -980,10 +1080,12 @@ app.post('/admin/approvals/:id/reject', async (c) => {
 
 // Tangguhkan anggota (Admin Konten / Super Admin)
 app.post('/admin/members/:id/suspend', async (c) => {
-  const authUser = await getAuthUser(c);
-  if (!authUser || !isAdminRole(authUser.role)) {
+  const auth = await getAuth(c);
+  if (!auth.ok) return authErrorResponse(c, auth);
+  if (!isAdminRole(auth.user.role)) {
     return c.json({ error: { code: 'FORBIDDEN', message: 'Akses ditolak' } }, 403);
   }
+  const authUser = auth.user;
 
   const id = c.req.param('id');
   const config = resolveConfig(c.env);
@@ -1013,10 +1115,12 @@ app.post('/admin/members/:id/suspend', async (c) => {
 
 // Pulihkan anggota yang ditangguhkan (Admin Konten / Super Admin)
 app.post('/admin/members/:id/restore', async (c) => {
-  const authUser = await getAuthUser(c);
-  if (!authUser || !isAdminRole(authUser.role)) {
+  const auth = await getAuth(c);
+  if (!auth.ok) return authErrorResponse(c, auth);
+  if (!isAdminRole(auth.user.role)) {
     return c.json({ error: { code: 'FORBIDDEN', message: 'Akses ditolak' } }, 403);
   }
+  const authUser = auth.user;
 
   const id = c.req.param('id');
   const config = resolveConfig(c.env);
@@ -1046,10 +1150,12 @@ app.post('/admin/members/:id/restore', async (c) => {
 
 // Kelola peran pengguna (khusus Super Admin)
 app.put('/admin/users/:id/role', async (c) => {
-  const authUser = await getAuthUser(c);
-  if (!authUser || authUser.role !== 'super_admin') {
+  const auth = await getAuth(c);
+  if (!auth.ok) return authErrorResponse(c, auth);
+  if (auth.user.role !== 'super_admin') {
     return c.json({ error: { code: 'FORBIDDEN', message: 'Hanya Super Admin yang dapat mengubah peran' } }, 403);
   }
+  const authUser = auth.user;
 
   const id = c.req.param('id');
   const body = await c.req.json().catch(() => ({}));

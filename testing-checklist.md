@@ -46,7 +46,7 @@ Dokumen ini memuat skenario pengujian komprehensif per fitur, per peran pengguna
 
 ## 2.1 Uji Integrasi Otomatis (Vitest) — Fase 3
 
-Berkas: `functions/api-authz.test.ts` (22 test). Jalankan dengan `pnpm test`.
+Berkas: `functions/api-authz.test.ts` (28 test), `functions/clerk-auth.test.ts` (16 test), dan `src/services/api.test.ts` (3 test). Jalankan dengan `pnpm test`.
 
 Mock: `@neondatabase/serverless` (tagged-template tiruan) dan `functions/lib/clerk-auth` (sesi Clerk). Endpoint diuji langsung melalui `app.request()` Hono dengan `basePath /api`.
 
@@ -62,7 +62,25 @@ Mock: `@neondatabase/serverless` (tagged-template tiruan) dan `functions/lib/cle
 - [x] **Tangguhkan setelah auto-aktif:** `suspend` pertama `200`, kedua `404`; `restore` mengembalikan `active`.
 - [x] **Turnstile fail-closed:** tanpa `TURNSTILE_SECRET_KEY` dan saat `siteverify` menjawab gagal, onboarding `400 BOT_VERIFICATION_FAILED`.
 
-Status terakhir: `3 berkas uji, 32 test lulus`.
+- [x] **Kode alasan auth (BUG 1):** setiap `error.code` (`TOKEN_MISSING`, `TOKEN_MALFORMED`, `TOKEN_EXPIRED`, `TOKEN_NOT_YET_VALID`, `ISSUER_MISMATCH`, `AZP_MISMATCH`, `SIGNATURE_INVALID`, `JWKS_FETCH_FAILED`, `EMAIL_UNVERIFIED`, `CLERK_BACKEND_ERROR`) mengembalikan pesan yang sesuai dan log server hanya `[auth] code=<KODE> path=<path>` (tanpa token/email).
+- [x] **Toleransi jam 10 detik:** `exp`/`nbf`/`iat` selisih ≤ 10 detik diterima; lebih dari itu ditolak dengan kode yang tepat.
+- [x] **Issuer & azp:** issuer diturunkan dari `CLERK_PUBLISHABLE_KEY`; `azp` diizinkan bagi `CLERK_AUTHORIZED_PARTIES`, origin frontend API Clerk, dan `localhost`/`127.0.0.1` pada `pk_test_` (proxy Vite 5173 → Wrangler 8788).
+- [x] **Sesi belum login:** pesan "Silakan login" hanya untuk `TOKEN_MISSING`; kode lain menampilkan pesan sesuai alasannya.
+- [x] **Token segar & retry:** klien memakai `getToken({ skipCache: true })` setiap permintaan dan mengulang sekali pada `401` dengan token baru; `fetchProfile` tidak lagi menandai `incomplete` saat error.
+- [x] **Lookup publik anti-500:** kelima endpoint lookup dapat diakses tanpa login; bila DB gagal balas `200` dengan `{ "data": [] }` dan log `code=LOOKUP_DB_ERROR`; hasil unik dan urut abjad (`Lainnya` di akhir).
+- [x] **Seed idempotent (BUG 2):** `pnpm db:seed` dijalankan dua kali berturut-turut; jumlah tetap `universities 14, study_programs 84, industries 13, districts 12, villages 172, org_periods 1, org_leaders 4`.
+- [x] **Prodi Polinema (BUG 3):** 36 entri kampus utama Malang (17 D4, 11 D3, 1 D2, 5 S2, 1 S3 + "Lainnya") dari polinema.ac.id, verifikasi 29 Oktober 2026; nama kanonik tanpa prefiks jenjang, `degree_level` terpisah, label dropdown menampilkan jenjang.
+
+Status terakhir: `5 berkas uji, 57 test lulus`.
+
+- [x] **Kode alasan auth (BUG 1):** setiap `error.code` (`TOKEN_MISSING`, `TOKEN_MALFORMED`, `TOKEN_EXPIRED`, `TOKEN_NOT_YET_VALID`, `ISSUER_MISMATCH`, `AZP_MISMATCH`, `SIGNATURE_INVALID`, `JWKS_FETCH_FAILED`, `EMAIL_UNVERIFIED`, `CLERK_BACKEND_ERROR`) mengembalikan pesan yang sesuai dan log server hanya `[auth] code=<KODE> path=<path>` (tanpa token/email).
+- [x] **Toleransi jam 10 detik:** `exp`/`nbf`/`iat` selisih ≤ 10 detik diterima; lebih dari itu ditolak dengan kode yang tepat.
+- [x] **Issuer & azp:** issuer diturunkan dari `CLERK_PUBLISHABLE_KEY`; `azp` diizinkan bagi `CLERK_AUTHORIZED_PARTIES`, origin frontend API Clerk, dan `localhost`/`127.0.0.1` pada `pk_test_` (proxy Vite 5173 → Wrangler 8788).
+- [x] **Sesi belum login:** pesan "Silakan login" hanya untuk `TOKEN_MISSING`; kode lain menampilkan pesan sesuai alasannya.
+- [x] **Token segar & retry:** klien memakai `getToken({ skipCache: true })` setiap permintaan dan mengulang sekali pada `401` dengan token baru; `fetchProfile` tidak lagi menandai `incomplete` saat error.
+- [x] **Lookup publik anti-500:** kelima endpoint lookup dapat diakses tanpa login; bila DB gagal balas `200` dengan `{ "data": [] }` dan log `code=LOOKUP_DB_ERROR`; hasil unik dan urut abjad (`Lainnya` di akhir).
+- [x] **Seed idempotent (BUG 2):** `pnpm db:seed` dijalankan dua kali berturut-turut; jumlah tetap `universities 14, study_programs 84, industries 13, districts 12, villages 172, org_periods 1, org_leaders 4`.
+- [x] **Prodi Polinema (BUG 3):** 36 entri kampus utama Malang (17 D4, 11 D3, 1 D2, 5 S2, 1 S3 + "Lainnya") dari polinema.ac.id, verifikasi 29 Oktober 2026; nama kanonik tanpa prefiks jenjang, `degree_level` terpisah, label dropdown menampilkan jenjang.
 
 ---
 

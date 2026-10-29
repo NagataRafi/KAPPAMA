@@ -38,8 +38,28 @@ const auth = vi.hoisted(() => ({
 
 vi.mock('@neondatabase/serverless', () => ({ neon: () => db.sql }));
 vi.mock('./lib/clerk-auth', () => ({
-  verifyClerkSessionToken: async () => auth.state.session,
-  fetchClerkUser: async () => auth.state.user,
+  AUTH_ERROR_MESSAGES: {
+    TOKEN_MISSING: 'Sesi login tidak ditemukan. Silakan login ulang.',
+    TOKEN_MALFORMED: 'Sesi login tidak valid.',
+    TOKEN_EXPIRED: 'Sesi login sudah kedaluwarsa.',
+    TOKEN_NOT_YET_VALID: 'Jam perangkat tidak cocok.',
+    ISSUER_MISMATCH: 'Sesi login berasal dari aplikasi lain.',
+    AZP_MISMATCH: 'Sesi login tidak cocok dengan aplikasi ini.',
+    SIGNATURE_INVALID: 'Tanda tangan sesi login tidak valid.',
+    JWKS_FETCH_FAILED: 'Server tidak dapat memverifikasi sesi saat ini.',
+    EMAIL_UNVERIFIED: 'Email akun belum terverifikasi.',
+    CLERK_BACKEND_ERROR: 'Server gagal memeriksa akun Anda.',
+  },
+  verifyClerkSessionToken: async () =>
+    auth.state.session
+      ? { ok: true, session: auth.state.session }
+      : { ok: false, code: 'TOKEN_MISSING' },
+  fetchClerkUser: async () =>
+    !auth.state.user
+      ? { ok: false, code: 'CLERK_BACKEND_ERROR' }
+      : auth.state.user.emailVerified
+        ? { ok: true, user: auth.state.user }
+        : { ok: false, code: 'EMAIL_UNVERIFIED' },
 }));
 
 const { app } = await import('./[[path]]');
@@ -427,6 +447,67 @@ describe('Alur status anggota', () => {
     const res = await request('/admin/members/m1/restore', { method: 'POST', headers: AUTH_HEADER });
     expect(res.status).toBe(200);
     expect(current.status).toBe('active');
+  });
+});
+
+describe('Alasan penolakan auth yang aman', () => {
+  it('mengembalikan TOKEN_MISSING untuk permintaan tanpa sesi', async () => {
+    const res = await request('/me');
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('TOKEN_MISSING');
+    expect(body.error.message).not.toContain('Bearer');
+  });
+
+  it('mengembalikan EMAIL_UNVERIFIED untuk email Clerk belum terverifikasi', async () => {
+    loginAs('member');
+    auth.state.user = { id: 'clerk_u1', email: 'u1@example.com', emailVerified: false };
+
+    const res = await request('/me', { headers: AUTH_HEADER });
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('EMAIL_UNVERIFIED');
+  });
+
+  it('mengembalikan SERVER_MISCONFIGURED saat CLERK_SECRET_KEY tidak diset', async () => {
+    const res = await request('/me', { headers: AUTH_HEADER }, { ...ENV, CLERK_SECRET_KEY: undefined });
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('SERVER_MISCONFIGURED');
+  });
+
+  it('tidak mencatat token atau email pada log penolakan', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await request('/me', { headers: { Authorization: 'Bearer token-rahasia' } });
+    const logged = warn.mock.calls.flat().join(' ');
+    expect(logged).toContain('code=TOKEN_MISSING');
+    expect(logged).not.toContain('token-rahasia');
+    expect(logged).not.toContain('@example.com');
+    warn.mockRestore();
+  });
+});
+
+describe('Lookups publik', () => {
+  it('melayani districts tanpa login', async () => {
+    db.state.handler = () => [{ id: '35.01.01', name: 'Donorojo' }];
+    const res = await request('/lookups/districts');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: Array<{ name: string }> };
+    expect(body.data).toHaveLength(1);
+  });
+
+  it('tidak 500 saat database gagal, cukup data kosong', async () => {
+    db.state.handler = () => {
+      throw new Error('database down');
+    };
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await request('/lookups/universities');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: unknown[] };
+    expect(body.data).toEqual([]);
+    expect(errorLog.mock.calls.flat().join(' ')).toContain('code=LOOKUP_DB_ERROR');
+    errorLog.mockRestore();
   });
 });
 

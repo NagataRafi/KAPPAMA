@@ -8,6 +8,20 @@
       "when": 1792944154576,
       "tag": "0000_slow_karen_page",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793244100080,
+      "tag": "0001_dedupe_master_data",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793244520548,
+      "tag": "0002_study_program_degree_unique",
+      "breakpoints": true
     }
   ]
 }

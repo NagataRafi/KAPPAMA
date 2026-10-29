@@ -29,11 +29,17 @@ export const users = pgTable(
 );
 
 // 2. Master Data Wilayah Pacitan
-export const districts = pgTable('districts', {
-  id: varchar('id', { length: 20 }).primaryKey(), // Kode Kemendagri misal: 35.01.01
-  name: varchar('name', { length: 100 }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-});
+export const districts = pgTable(
+  'districts',
+  {
+    id: varchar('id', { length: 20 }).primaryKey(), // Kode Kemendagri misal: 35.01.01
+    name: varchar('name', { length: 100 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    nameIdx: uniqueIndex('idx_districts_name').on(table.name),
+  })
+);
 
 export const villages = pgTable(
   'villages',
@@ -47,19 +53,26 @@ export const villages = pgTable(
   },
   (table) => ({
     districtIdx: index('idx_villages_district_id').on(table.districtId),
+    districtNameIdx: uniqueIndex('idx_villages_district_name').on(table.districtId, table.name),
   })
 );
 
 // 3. Master Data Universitas & Prodi
-export const universities = pgTable('universities', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  name: varchar('name', { length: 150 }).notNull(),
-  abbreviation: varchar('abbreviation', { length: 50 }),
-  city: varchar('city', { length: 100 }).default('Malang'),
-  isActive: boolean('is_active').default(true).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-});
+export const universities = pgTable(
+  'universities',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    name: varchar('name', { length: 150 }).notNull(),
+    abbreviation: varchar('abbreviation', { length: 50 }),
+    city: varchar('city', { length: 100 }).default('Malang'),
+    isActive: boolean('is_active').default(true).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    nameIdx: uniqueIndex('idx_universities_name').on(table.name),
+  })
+);
 
 export const studyPrograms = pgTable(
   'study_programs',
@@ -76,17 +89,29 @@ export const studyPrograms = pgTable(
   },
   (table) => ({
     universityIdx: index('idx_study_programs_univ_id').on(table.universityId),
+    // Nama prodi boleh sama antarjenjang (mis. D4 dan D3 Teknik Elektronika).
+    universityNameIdx: uniqueIndex('idx_study_programs_univ_name').on(
+      table.universityId,
+      table.name,
+      table.degreeLevel
+    ),
   })
 );
 
 // 4. Master Industri (untuk Alumni)
-export const industries = pgTable('industries', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  name: varchar('name', { length: 100 }).notNull(),
-  isActive: boolean('is_active').default(true).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-});
+export const industries = pgTable(
+  'industries',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    name: varchar('name', { length: 100 }).notNull(),
+    isActive: boolean('is_active').default(true).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    nameIdx: uniqueIndex('idx_industries_name').on(table.name),
+  })
+);
 
 // 5. Member Profiles
 export const memberProfiles = pgTable(

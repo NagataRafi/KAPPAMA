@@ -4,6 +4,41 @@
 
 const API_BASE = '/api';
 
+// Provider token dipasang AuthContext setelah Clerk siap (isLoaded && isSignedIn).
+// Setiap permintaan memakai token segar (skipCache) agar token kedaluwarsa tidak
+// lagi memicu "Silakan login" palsu.
+let tokenProvider: (() => Promise<string | null>) | null = null;
+
+export function setApiTokenProvider(provider: (() => Promise<string | null>) | null): void {
+  tokenProvider = provider;
+}
+
+async function resolveToken(explicit?: string | null): Promise<string | null> {
+  if (tokenProvider) {
+    try {
+      const fresh = await tokenProvider();
+      if (fresh) return fresh;
+    } catch {
+      // Clerk belum siap; pakai token eksplisit bila ada.
+    }
+  }
+  return explicit ?? null;
+}
+
+function sendRequest(endpoint: string, options: RequestInit, token: string | null) {
+  const headers = new Headers(options.headers || {});
+  headers.set('Content-Type', 'application/json');
+
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
+  return fetch(`${API_BASE}${endpoint}`, {
+    ...options,
+    headers,
+  });
+}
+
 export class ApiError extends Error {
   code?: string;
   status: number;
@@ -23,17 +58,17 @@ export async function fetchApi<T>(
   options: RequestInit = {},
   token?: string | null
 ): Promise<T> {
-  const headers = new Headers(options.headers || {});
-  headers.set('Content-Type', 'application/json');
+  let bearer = await resolveToken(token);
+  let response = await sendRequest(endpoint, options, bearer);
 
-  if (token) {
-    headers.set('Authorization', `Bearer ${token}`);
+  // Token bisa kedaluwarsa di tengah sesi. Ambil token baru sekali, lalu ulangi.
+  if (response.status === 401) {
+    const fresh = await resolveToken(null);
+    if (fresh && fresh !== bearer) {
+      bearer = fresh;
+      response = await sendRequest(endpoint, options, bearer);
+    }
   }
-
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    headers,
-  });
 
   const data = (await response.json().catch(() => null)) as {
     error?: { message?: string; code?: string; details?: unknown };
