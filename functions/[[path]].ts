@@ -186,6 +186,12 @@ async function getAuth(c: Context<{ Bindings: Env }>): Promise<AuthOutcome> {
     `;
 
     if (isBootstrapEmail) {
+      // Pastikan profil anggota Super Admin aktif segera (bukan pending)
+      await sql`
+        INSERT INTO member_profiles (user_id, status, submitted_at, approved_at, approval_type, consent_at, consent_version)
+        VALUES (${userRows[0].id}, 'active', NOW(), NOW(), 'manual', NOW(), '2026.1')
+      `;
+
       await sql`
         INSERT INTO audit_logs (actor_id, action, entity, entity_id, metadata)
         VALUES (${userRows[0].id}, 'SUPER_ADMIN_BOOTSTRAPPED', 'users', ${userRows[0].id}, ${JSON.stringify({ source: 'bootstrap_email' })})
@@ -199,10 +205,44 @@ async function getAuth(c: Context<{ Bindings: Env }>): Promise<AuthOutcome> {
       RETURNING id, clerk_user_id, email, role
     `;
 
+    // Pastikan profil anggota Super Admin aktif
+    const existingProfile = await sql`
+      SELECT id FROM member_profiles WHERE user_id = ${userRows[0].id} LIMIT 1
+    `;
+    if (existingProfile.length > 0) {
+      await sql`
+        UPDATE member_profiles
+        SET status = 'active', approved_at = NOW(), approval_type = 'manual', updated_at = NOW()
+        WHERE id = ${existingProfile[0].id}
+      `;
+    } else {
+      await sql`
+        INSERT INTO member_profiles (user_id, status, submitted_at, approved_at, approval_type, consent_at, consent_version)
+        VALUES (${userRows[0].id}, 'active', NOW(), NOW(), 'manual', NOW(), '2026.1')
+      `;
+    }
+
     await sql`
       INSERT INTO audit_logs (actor_id, action, entity, entity_id, metadata)
       VALUES (${userRows[0].id}, 'SUPER_ADMIN_BOOTSTRAPPED', 'users', ${userRows[0].id}, ${JSON.stringify({ source: 'bootstrap_email' })})
     `;
+  } else if (isBootstrapEmail) {
+    // Idempoten: akun bootstrap lama yang sudah super_admin tapi profil masih pending
+    const existingProfile = await sql`
+      SELECT id FROM member_profiles WHERE user_id = ${userRows[0].id} LIMIT 1
+    `;
+    if (existingProfile.length > 0) {
+      await sql`
+        UPDATE member_profiles
+        SET status = 'active', approved_at = NOW(), approval_type = 'manual', updated_at = NOW()
+        WHERE id = ${existingProfile[0].id}
+      `;
+    } else {
+      await sql`
+        INSERT INTO member_profiles (user_id, status, submitted_at, approved_at, approval_type, consent_at, consent_version)
+        VALUES (${userRows[0].id}, 'active', NOW(), NOW(), 'manual', NOW(), '2026.1')
+      `;
+    }
   }
 
   return {

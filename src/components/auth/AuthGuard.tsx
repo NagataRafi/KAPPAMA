@@ -8,7 +8,7 @@ interface AuthGuardProps {
 }
 
 export function AuthGuard({ children, requireActive = true }: AuthGuardProps) {
-  const { isSignedIn, isLoaded, status, isLoadingProfile } = useAppAuth();
+  const { isSignedIn, isLoaded, status, role, isLoadingProfile } = useAppAuth();
   const location = useLocation();
 
   if (!isLoaded || isLoadingProfile) {
@@ -25,13 +25,18 @@ export function AuthGuard({ children, requireActive = true }: AuthGuardProps) {
   }
 
   // Jika belum onboarding, paksa ke halaman onboarding
+  // Admin (super_admin / content_admin) melewati redirect ini karena
+  // profil mereka di-bootstrap sebagai active, tidak perlu onboarding.
   if (status === 'incomplete' && location.pathname !== '/onboarding') {
     return <Navigate to="/onboarding" replace />;
   }
 
   // Jika membutuhkan status aktif (misalnya direktori atau profil saya)
   if (requireActive) {
-    if (status === 'pending' || status === 'rejected' || status === 'suspended') {
+    // Admin tetap boleh mengakses meski status pending/rejected/suspended:
+    // hanya member biasa yang diblokir sesuai PRD.
+    const isAdmin = role === 'super_admin' || role === 'content_admin';
+    if (!isAdmin && (status === 'pending' || status === 'rejected' || status === 'suspended')) {
       return <Navigate to="/status" replace />;
     }
   }

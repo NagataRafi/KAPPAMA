@@ -511,6 +511,74 @@ describe('Lookups publik', () => {
   });
 });
 
+describe('Bootstrap Super Admin', () => {
+  it('(a) membuat akun Super Admin dengan status active saat email cocok bootstrap', async () => {
+    loginAs('super_admin', 'boss');
+    // boss@example.com cocok BOOTSTRAP_SUPER_ADMIN_EMAIL di ENV
+    auth.state.user = { id: 'clerk_boss', email: 'boss@example.com', emailVerified: true };
+
+    db.state.handler = (text) => {
+      if (text.includes('FROM users')) return [];
+      if (text.includes('INSERT INTO users'))
+        return [{ id: 'boss-uuid', clerk_user_id: 'clerk_boss', email: 'boss@example.com', role: 'super_admin' }];
+      if (text.includes('INSERT INTO member_profiles'))
+        return [{ id: 'm-boss', user_id: 'boss-uuid', status: 'active' }];
+      return [];
+    };
+
+    const res = await request('/me', { headers: AUTH_HEADER });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { user: { role: string }; status: string } };
+    expect(body.data.user.role).toBe('super_admin');
+
+    const insertProfile = db.state.queries.find((q) => q.text.includes('INSERT INTO member_profiles'));
+    expect(insertProfile).toBeDefined();
+    expect(insertProfile!.text).toContain("'active'");
+    expect(insertProfile!.text).toContain("'manual'");
+  });
+
+  it('(b) memulihkan akun bootstrap lama dengan status pending menjadi active', async () => {
+    loginAs('super_admin', 'boss');
+    auth.state.user = { id: 'clerk_boss', email: 'boss@example.com', emailVerified: true };
+
+    db.state.handler = (text) => {
+      if (text.includes('FROM users'))
+        return [{ id: 'boss-uuid', clerk_user_id: 'clerk_boss', email: 'boss@example.com', role: 'member' }];
+      if (text.includes("UPDATE users") && text.includes("role = 'super_admin'"))
+        return [{ id: 'boss-uuid', clerk_user_id: 'clerk_boss', email: 'boss@example.com', role: 'super_admin' }];
+      if (text.includes('FROM member_profiles'))
+        return [{ id: 'm-boss', user_id: 'boss-uuid', status: 'pending' }];
+      if (text.includes("UPDATE member_profiles") && text.includes("status = 'active'"))
+        return [{ id: 'm-boss', user_id: 'boss-uuid', status: 'active' }];
+      return [];
+    };
+
+    const res = await request('/me', { headers: AUTH_HEADER });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { user: { role: string }; status: string } };
+    expect(body.data.user.role).toBe('super_admin');
+
+    const updateProfile = db.state.queries.find(
+      (q) => q.text.includes('UPDATE member_profiles') && q.text.includes("status = 'active'")
+    );
+    expect(updateProfile).toBeDefined();
+  });
+});
+
+describe('Endpoint admin: peran dan persetujuan (lanjutan)', () => {
+  it('(d) content_admin dengan status pending tidak diblokir dari /admin/approvals', async () => {
+    const admin = loginAs('content_admin', 'admin1');
+    db.state.handler = (text) => {
+      if (text.includes('FROM users')) return [admin];
+      if (text.includes('FROM member_profiles')) return [profile('pending', new Date().toISOString())];
+      return [];
+    };
+
+    const res = await request('/admin/approvals', { headers: AUTH_HEADER });
+    expect(res.status).toBe(200);
+  });
+});
+
 describe('Turnstile fail-closed', () => {
   it('menolak onboarding bila TURNSTILE_SECRET_KEY tidak diset', async () => {
     const user = loginAs('member');

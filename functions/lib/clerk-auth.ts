@@ -9,7 +9,6 @@
 
 const JWKS_URL = 'https://api.clerk.com/v1/jwks';
 const JWKS_TTL_MS = 5 * 60 * 1000;
-// Toleransi selisih jam perangkat/klien terhadap server.
 const CLOCK_LEEWAY_SECONDS = 10;
 
 export type AuthErrorCode =
@@ -135,12 +134,21 @@ function isAuthorizedPartyAllowed(
   return isTestInstance && isLoopbackHost(azp);
 }
 
-async function getSigningKeys(): Promise<Jwk[]> {
+async function getSigningKeys(jwksUrl?: string): Promise<Jwk[]> {
+  const url = jwksUrl || JWKS_URL;
   if (cachedKeys && Date.now() - cachedKeys.fetchedAt < JWKS_TTL_MS) {
     return cachedKeys.keys;
   }
-  const res = await fetch(JWKS_URL);
-  if (!res.ok) throw new Error('Gagal mengambil JWKS Clerk');
+  const res = await fetch(url);
+  if (!res.ok) {
+    const status = res.status;
+    const errorTxt = await res.text().catch(() => '');
+    // Log safely: only status, host-derived info, no secrets / token / header
+    const hostMatch = url.match(/^https?:\/\/[^/]+/);
+    const host = hostMatch ? hostMatch[0] : 'unknown';
+    console.warn(`[jwks] code=JWKS_FETCH_FAILED status=${status} host=${host} error=${errorTxt.substring(0, 200)}`);
+    throw new Error(`Gagal mengambil JWKS dari ${url}`);
+  }
   const body = (await res.json()) as { keys?: Jwk[] };
   const keys = body.keys ?? [];
   cachedKeys = { keys, fetchedAt: Date.now() };
@@ -201,6 +209,12 @@ export async function verifyClerkSessionToken(
   }
 
   const expectedIssuer = issuerFromPublishableKey(options.publishableKey);
+  // Derive JWKS URL from issuer untuk domain Clerk custom.
+  // Format Clerk: ${issuer}/.well-known/jwks.json (contoh: striking-midge-3815.clerk.accounts.dev/.well-known/jwks.json)
+  // Fallback ke endpoint global Clerk untuk domain standar.
+  const jwksUrl = expectedIssuer
+    ? `${expectedIssuer}/.well-known/jwks.json`
+    : JWKS_URL;
   if (expectedIssuer && typeof payload.iss === 'string' && !sameOrigin(payload.iss, expectedIssuer)) {
     return fail('ISSUER_MISMATCH');
   }
@@ -213,7 +227,7 @@ export async function verifyClerkSessionToken(
 
   let keys: Jwk[];
   try {
-    keys = await getSigningKeys();
+    keys = await getSigningKeys(jwksUrl);
   } catch {
     return fail('JWKS_FETCH_FAILED');
   }
