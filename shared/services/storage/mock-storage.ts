@@ -25,6 +25,8 @@ export class MockStorageAdapter implements StorageService {
       folder: options.folder,
       publicId,
       uploadUrl: '/api/mock/uploads',
+      resourceType: options.resourceType ?? 'image',
+      allowedFormats: options.allowedFormats,
     };
   }
 
@@ -44,7 +46,7 @@ export class MockStorageAdapter implements StorageService {
     return `${this.baseUrl}${transformStr}/${publicId}`;
   }
 
-  async deleteImage(_publicId: string): Promise<boolean> {
+  async deleteImage(_publicId: string, _resourceType: 'image' | 'raw' = 'image'): Promise<boolean> {
     return true;
   }
 

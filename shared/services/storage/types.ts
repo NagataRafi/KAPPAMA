@@ -12,6 +12,10 @@ export interface UploadSignatureOptions {
   publicId?: string;
   tags?: string[];
   maxFileSize?: number; // in bytes
+  /** 'auto' dipakai untuk PDF AD/ART; default 'image' untuk gambar. */
+  resourceType?: 'image' | 'raw' | 'auto';
+  /** Batasi format di sisi Cloudinary, mis. 'jpg,png,webp' atau 'pdf'. */
+  allowedFormats?: string;
 }
 
 export interface UploadSignatureResult {
@@ -22,6 +26,8 @@ export interface UploadSignatureResult {
   folder: string;
   publicId?: string;
   uploadUrl: string;
+  resourceType: 'image' | 'raw' | 'auto';
+  allowedFormats?: string;
 }
 
 export interface DirectUploadResult {
@@ -46,9 +52,9 @@ export interface StorageService {
   buildImageUrl(publicId: string, options?: ImageTransformOptions): string;
 
   /**
-   * Menghapus berkas gambar dari penyimpanan berdasarkan publicId.
+   * Menghapus berkas dari penyimpanan berdasarkan publicId.
    */
-  deleteImage(publicId: string): Promise<boolean>;
+  deleteImage(publicId: string, resourceType?: 'image' | 'raw'): Promise<boolean>;
 
   /**
    * Unggah langsung berkas ke penyimpanan (misal: untuk seeder atau pengujian).

@@ -68,6 +68,7 @@ export class CloudinaryStorageAdapter implements StorageService {
     }
 
     const timestamp = Math.floor(Date.now() / 1000);
+    const resourceType = options.resourceType ?? 'image';
     const paramsToSign: Record<string, string> = {
       folder: options.folder,
       timestamp: timestamp.toString(),
@@ -75,6 +76,10 @@ export class CloudinaryStorageAdapter implements StorageService {
 
     if (options.publicId) {
       paramsToSign.public_id = options.publicId;
+    }
+
+    if (options.allowedFormats) {
+      paramsToSign.allowed_formats = options.allowedFormats;
     }
 
     // Urutkan parameter secara alfabetis sesuai spesifikasi Cloudinary
@@ -89,7 +94,9 @@ export class CloudinaryStorageAdapter implements StorageService {
       cloudName: this.cloudName,
       folder: options.folder,
       publicId: options.publicId,
-      uploadUrl: `https://api.cloudinary.com/v1_1/${this.cloudName}/image/upload`,
+      uploadUrl: `https://api.cloudinary.com/v1_1/${this.cloudName}/${resourceType}/upload`,
+      resourceType,
+      allowedFormats: options.allowedFormats,
     };
   }
 
@@ -111,7 +118,7 @@ export class CloudinaryStorageAdapter implements StorageService {
     return `https://res.cloudinary.com/${this.cloudName}/image/upload/${transformPath}/${publicId}`;
   }
 
-  async deleteImage(publicId: string): Promise<boolean> {
+  async deleteImage(publicId: string, resourceType: 'image' | 'raw' = 'image'): Promise<boolean> {
     if (!this.apiSecret) {
       throw new Error('CLOUDINARY_API_SECRET diperlukan untuk menghapus berkas di Cloudinary.');
     }
@@ -126,10 +133,13 @@ export class CloudinaryStorageAdapter implements StorageService {
     formData.append('api_key', this.apiKey);
     formData.append('signature', signature);
 
-    const response = await fetch(`https://api.cloudinary.com/v1_1/${this.cloudName}/image/destroy`, {
-      method: 'POST',
-      body: formData,
-    });
+    const response = await fetch(
+      `https://api.cloudinary.com/v1_1/${this.cloudName}/${resourceType}/destroy`,
+      {
+        method: 'POST',
+        body: formData,
+      }
+    );
 
     if (!response.ok) return false;
     const result = (await response.json()) as { result?: string };
@@ -157,6 +167,9 @@ export class CloudinaryStorageAdapter implements StorageService {
     formData.append('folder', signatureData.folder);
     if (signatureData.publicId) {
       formData.append('public_id', signatureData.publicId);
+    }
+    if (signatureData.allowedFormats) {
+      formData.append('allowed_formats', signatureData.allowedFormats);
     }
 
     const response = await fetch(signatureData.uploadUrl, {

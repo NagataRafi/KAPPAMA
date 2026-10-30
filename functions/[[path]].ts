@@ -1,9 +1,24 @@
 import { Hono, Context } from 'hono';
 import { handle } from 'hono/cloudflare-pages';
 import { neon } from '@neondatabase/serverless';
+import type { NeonQueryFunction } from '@neondatabase/serverless';
 import { parseCloudinaryUrl } from '../shared/services/storage/cloudinary-storage';
+import { createStorageService } from '../shared/services/storage';
 import { getEffectiveStatus } from '../shared/utils/effective-status';
+import { extractYouTubeId } from '../shared/utils/youtube';
 import { onboardingInputSchema } from '../shared/schema/member-schema';
+import {
+  orgProfileInputSchema,
+  periodInputSchema,
+  leaderInputSchema,
+  bylawsInputSchema,
+  programInputSchema,
+  albumInputSchema,
+  mediaInputSchema,
+  mediaUpdateSchema,
+  statusInputSchema,
+  signatureRequestSchema,
+} from '../shared/schema/content-schema';
 import {
   verifyClerkSessionToken,
   fetchClerkUser,
@@ -69,6 +84,8 @@ function resolveConfig(env?: Env) {
     cloudinary: {
       isConfigured: Boolean(cloudName && cloudinaryApiKey && cloudinaryApiSecret),
       cloudName: cloudName || null,
+      apiKey: cloudinaryApiKey || null,
+      apiSecret: cloudinaryApiSecret || null,
       usingUrlFormat: Boolean(env?.CLOUDINARY_URL && !env?.CLOUDINARY_CLOUD_NAME),
     },
     email: {
@@ -261,6 +278,77 @@ function isAdminRole(role: AuthUser['role'] | null | undefined): boolean {
 }
 
 // ============================================================================
+// Helper bersama modul konten (Fase 4A)
+// ============================================================================
+type AdminGate = { user: AuthUser } | { response: Response };
+
+/** Deny by default: tanpa sesi 401, bukan Admin Konten/Super Admin 403. */
+async function contentAdminGate(c: Context<{ Bindings: Env }>): Promise<AdminGate> {
+  const auth = await getAuth(c);
+  if (!auth.ok) return { response: authErrorResponse(c, auth) };
+  if (!isAdminRole(auth.user.role)) {
+    return {
+      response: c.json({ error: { code: 'FORBIDDEN', message: 'Akses ditolak' } }, 403),
+    };
+  }
+  return { user: auth.user };
+}
+
+function validationError(c: Context<{ Bindings: Env }>, message: string, details?: unknown) {
+  return c.json(
+    {
+      error: {
+        code: 'VALIDATION_ERROR',
+        message,
+        ...(details === undefined ? {} : { details }),
+      },
+    },
+    422
+  );
+}
+
+function storageFor(c: Context<{ Bindings: Env }>) {
+  const config = resolveConfig(c.env);
+  return createStorageService({
+    cloudName: config.cloudinary.cloudName ?? undefined,
+    apiKey: config.cloudinary.apiKey ?? undefined,
+    apiSecret: config.cloudinary.apiSecret ?? undefined,
+  });
+}
+
+function assetUrl(c: Context<{ Bindings: Env }>, key: string | null, width?: number): string | null {
+  if (!key) return null;
+  if (/^(https?:)?\/\//.test(key) || key.startsWith('/')) return key;
+  return storageFor(c).buildImageUrl(key, width ? { width } : undefined);
+}
+
+/** Hapus aset Cloudinary; kunci eksternal/statis dilewati. Galat tidak menggagalkan request. */
+async function deleteStoredAsset(c: Context<{ Bindings: Env }>, key: string | null) {
+  if (!key || /^(https?:)?\/\//.test(key) || key.startsWith('/')) return;
+  const storage = storageFor(c);
+  try {
+    const removed = await storage.deleteImage(key);
+    if (!removed) await storage.deleteImage(key, 'raw');
+  } catch {
+    console.warn('[content] code=ASSET_DELETE_FAILED');
+  }
+}
+
+async function writeAudit(
+  sql: NeonQueryFunction<false, false>,
+  actorId: string,
+  action: string,
+  entity: string,
+  entityId: string | null,
+  metadata: Record<string, unknown> = {}
+) {
+  await sql`
+    INSERT INTO audit_logs (actor_id, action, entity, entity_id, metadata)
+    VALUES (${actorId}, ${action}, ${entity}, ${entityId}, ${JSON.stringify(metadata)})
+  `;
+}
+
+// ============================================================================
 // 1. HEALTH CHECK ENDPOINT
 // ============================================================================
 app.get('/health', async (c) => {
@@ -285,7 +373,7 @@ app.get('/health', async (c) => {
   return c.json({
     status: 'ok',
     app: 'kappama-backend',
-    version: '0.3.1',
+    version: '0.5.0',
     timestamp: new Date().toISOString(),
     database: {
       status: dbStatus,
@@ -1247,6 +1335,1271 @@ app.put('/admin/users/:id/role', async (c) => {
   `;
 
   return c.json({ data: { message: 'Peran berhasil diperbarui' } });
+});
+
+// ============================================================================
+// 6. KONTEN PUBLIK (hanya data terbit; draft tidak pernah keluar dari server)
+// ============================================================================
+function publicProgram(c: Context<{ Bindings: Env }>, r: Record<string, unknown>) {
+  return {
+    id: r.id,
+    title: r.title,
+    slug: r.slug,
+    year: r.year,
+    eventDate: r.event_date,
+    location: r.location,
+    summary: r.summary,
+    description: r.description,
+    objectives: r.objectives,
+    targets: r.targets,
+    picName: r.pic_name,
+    coverUrl: assetUrl(c, (r.cover_key as string) ?? null, 1200),
+    universityName: r.university_name ?? null,
+    universityAbbr: r.university_abbr ?? null,
+  };
+}
+
+function publicAlbum(c: Context<{ Bindings: Env }>, r: Record<string, unknown>) {
+  return {
+    id: r.id,
+    title: r.title,
+    slug: r.slug,
+    year: r.year,
+    eventDate: r.event_date,
+    description: r.description,
+    coverUrl: assetUrl(c, (r.cover_key as string) ?? null, 1200),
+    photoCount: Number(r.photo_count ?? 0),
+    videoCount: Number(r.video_count ?? 0),
+  };
+}
+
+function publicMedia(c: Context<{ Bindings: Env }>, r: Record<string, unknown>) {
+  return r.media_type === 'youtube'
+    ? {
+        id: r.id,
+        mediaType: 'youtube' as const,
+        youtubeId: r.youtube_id,
+        caption: r.caption,
+        sortOrder: r.sort_order,
+      }
+    : {
+        id: r.id,
+        mediaType: 'image' as const,
+        url: assetUrl(c, (r.file_key as string) ?? null, 1600),
+        caption: r.caption,
+        sortOrder: r.sort_order,
+      };
+}
+
+app.get('/public/org', async (c) => {
+  const config = resolveConfig(c.env);
+  if (!config.databaseUrl) return c.json({ data: null });
+  try {
+    const sql = neon(config.databaseUrl);
+    const rows = await sql`
+      SELECT about_text, vision_text, missions, contact_email, contact_instagram, contact_address, logo_key
+      FROM org_profile
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `;
+    if (rows.length === 0) return c.json({ data: null });
+    const r = rows[0];
+    return c.json({
+      data: {
+        aboutText: r.about_text,
+        visionText: r.vision_text,
+        missions: Array.isArray(r.missions) ? r.missions : [],
+        contactEmail: r.contact_email,
+        contactInstagram: r.contact_instagram,
+        contactAddress: r.contact_address,
+        logoUrl: assetUrl(c, r.logo_key ?? null, 256),
+      },
+    });
+  } catch {
+    console.error('[content] code=PUBLIC_ORG_FAILED path=/public/org');
+    return c.json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal memuat profil organisasi' } }, 500);
+  }
+});
+
+app.get('/public/leaders', async (c) => {
+  const config = resolveConfig(c.env);
+  if (!config.databaseUrl) return c.json({ data: { periods: [], period: null, leaders: [] } });
+  try {
+    const sql = neon(config.databaseUrl);
+    const periods = await sql`
+      SELECT id, period_label, start_year, end_year, is_current
+      FROM org_periods
+      ORDER BY start_year DESC, created_at DESC
+    `;
+    if (periods.length === 0) return c.json({ data: { periods: [], period: null, leaders: [] } });
+
+    const requested = c.req.query('period');
+    const selected =
+      periods.find((p: Record<string, unknown>) => p.id === requested) ??
+      periods.find((p: Record<string, unknown>) => p.is_current) ??
+      periods[0];
+
+    const leaders = await sql`
+      SELECT id, position, name, photo_key, campus_study, sort_order
+      FROM org_leaders
+      WHERE period_id = ${selected.id}
+      ORDER BY sort_order ASC, created_at ASC
+    `;
+
+    return c.json({
+      data: {
+        periods: periods.map((p: Record<string, unknown>) => ({
+          id: p.id,
+          periodLabel: p.period_label,
+          startYear: p.start_year,
+          endYear: p.end_year,
+          isCurrent: p.is_current,
+        })),
+        period: {
+          id: selected.id,
+          periodLabel: selected.period_label,
+          startYear: selected.start_year,
+          endYear: selected.end_year,
+          isCurrent: selected.is_current,
+        },
+        leaders: leaders.map((l: Record<string, unknown>) => ({
+          id: l.id,
+          position: l.position,
+          name: l.name,
+          photoUrl: assetUrl(c, (l.photo_key as string) ?? null, 400),
+          campusStudy: l.campus_study,
+          sortOrder: l.sort_order,
+        })),
+      },
+    });
+  } catch {
+    console.error('[content] code=PUBLIC_LEADERS_FAILED path=/public/leaders');
+    return c.json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal memuat struktur organisasi' } }, 500);
+  }
+});
+
+app.get('/public/bylaws', async (c) => {
+  const config = resolveConfig(c.env);
+  if (!config.databaseUrl) return c.json({ data: { current: null, history: [] } });
+  try {
+    const sql = neon(config.databaseUrl);
+    const rows = await sql`
+      SELECT id, title, file_key, effective_date, is_active
+      FROM bylaws_documents
+      ORDER BY is_active DESC, effective_date DESC, created_at DESC
+    `;
+    const shaped = rows.map((r: Record<string, unknown>) => ({
+      id: r.id,
+      title: r.title,
+      fileUrl: assetUrl(c, (r.file_key as string) ?? null),
+      effectiveDate: r.effective_date,
+      isActive: r.is_active,
+    }));
+    return c.json({
+      data: {
+        current: shaped.find((r) => r.isActive) ?? shaped[0] ?? null,
+        history: shaped,
+      },
+    });
+  } catch {
+    console.error('[content] code=PUBLIC_BYLAWS_FAILED path=/public/bylaws');
+    return c.json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal memuat AD/ART' } }, 500);
+  }
+});
+
+app.get('/public/programs', async (c) => {
+  const config = resolveConfig(c.env);
+  if (!config.databaseUrl) return c.json({ data: [] });
+  const year = parseInt(c.req.query('year') || '') || null;
+  const search = c.req.query('search')?.trim() || '';
+  try {
+    const sql = neon(config.databaseUrl);
+    const rows = await sql`
+      SELECT
+        p.id, p.title, p.slug, p.year, p.event_date, p.location, p.summary, p.description,
+        p.objectives, p.targets, p.pic_name, p.cover_key,
+        u.name AS university_name, u.abbreviation AS university_abbr
+      FROM programs p
+      LEFT JOIN universities u ON p.university_id = u.id
+      WHERE p.status = 'published' AND p.deleted_at IS NULL
+        ${year ? sql`AND p.year = ${year}` : sql``}
+        ${search ? sql`AND (p.title ILIKE ${'%' + search + '%'} OR p.summary ILIKE ${'%' + search + '%'})` : sql``}
+      ORDER BY p.year DESC, p.event_date DESC NULLS LAST, p.created_at DESC
+      LIMIT 100
+    `;
+    return c.json({ data: rows.map((r: Record<string, unknown>) => publicProgram(c, r)) });
+  } catch {
+    console.error('[content] code=PUBLIC_PROGRAMS_FAILED path=/public/programs');
+    return c.json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal memuat program kerja' } }, 500);
+  }
+});
+
+app.get('/public/programs/:slug', async (c) => {
+  const config = resolveConfig(c.env);
+  if (!config.databaseUrl) {
+    return c.json({ error: { code: 'NOT_FOUND', message: 'Program kerja tidak ditemukan' } }, 404);
+  }
+  try {
+    const sql = neon(config.databaseUrl);
+    const rows = await sql`
+      SELECT
+        p.id, p.title, p.slug, p.year, p.event_date, p.location, p.summary, p.description,
+        p.objectives, p.targets, p.pic_name, p.cover_key,
+        u.name AS university_name, u.abbreviation AS university_abbr
+      FROM programs p
+      LEFT JOIN universities u ON p.university_id = u.id
+      WHERE p.slug = ${c.req.param('slug')}
+        AND p.status = 'published' AND p.deleted_at IS NULL
+      LIMIT 1
+    `;
+    if (rows.length === 0) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Program kerja tidak ditemukan' } }, 404);
+    }
+    const media = await sql`
+      SELECT id, media_type, file_key, youtube_id, caption, sort_order
+      FROM program_media
+      WHERE program_id = ${rows[0].id}
+      ORDER BY sort_order ASC, created_at ASC
+    `;
+    return c.json({
+      data: {
+        ...publicProgram(c, rows[0]),
+        media: media.map((m: Record<string, unknown>) => publicMedia(c, m)),
+      },
+    });
+  } catch {
+    console.error('[content] code=PUBLIC_PROGRAM_DETAIL_FAILED');
+    return c.json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal memuat detail program kerja' } }, 500);
+  }
+});
+
+app.get('/public/albums', async (c) => {
+  const config = resolveConfig(c.env);
+  if (!config.databaseUrl) return c.json({ data: [] });
+  const year = parseInt(c.req.query('year') || '') || null;
+  try {
+    const sql = neon(config.databaseUrl);
+    const rows = await sql`
+      SELECT
+        a.id, a.title, a.slug, a.year, a.event_date, a.description, a.cover_key,
+        (SELECT COUNT(*)::int FROM album_media am WHERE am.album_id = a.id AND am.media_type = 'image') AS photo_count,
+        (SELECT COUNT(*)::int FROM album_media am WHERE am.album_id = a.id AND am.media_type = 'youtube') AS video_count
+      FROM albums a
+      WHERE a.status = 'published' AND a.deleted_at IS NULL
+        ${year ? sql`AND a.year = ${year}` : sql``}
+      ORDER BY a.year DESC, a.event_date DESC NULLS LAST, a.created_at DESC
+      LIMIT 100
+    `;
+    return c.json({ data: rows.map((r: Record<string, unknown>) => publicAlbum(c, r)) });
+  } catch {
+    console.error('[content] code=PUBLIC_ALBUMS_FAILED path=/public/albums');
+    return c.json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal memuat galeri' } }, 500);
+  }
+});
+
+app.get('/public/albums/:slug', async (c) => {
+  const config = resolveConfig(c.env);
+  if (!config.databaseUrl) {
+    return c.json({ error: { code: 'NOT_FOUND', message: 'Album tidak ditemukan' } }, 404);
+  }
+  try {
+    const sql = neon(config.databaseUrl);
+    const rows = await sql`
+      SELECT a.id, a.title, a.slug, a.year, a.event_date, a.description, a.cover_key,
+        (SELECT COUNT(*)::int FROM album_media am WHERE am.album_id = a.id AND am.media_type = 'image') AS photo_count,
+        (SELECT COUNT(*)::int FROM album_media am WHERE am.album_id = a.id AND am.media_type = 'youtube') AS video_count
+      FROM albums a
+      WHERE a.slug = ${c.req.param('slug')}
+        AND a.status = 'published' AND a.deleted_at IS NULL
+      LIMIT 1
+    `;
+    if (rows.length === 0) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Album tidak ditemukan' } }, 404);
+    }
+    const media = await sql`
+      SELECT id, media_type, file_key, youtube_id, caption, sort_order
+      FROM album_media
+      WHERE album_id = ${rows[0].id}
+      ORDER BY sort_order ASC, created_at ASC
+    `;
+    return c.json({
+      data: {
+        ...publicAlbum(c, rows[0]),
+        media: media.map((m: Record<string, unknown>) => publicMedia(c, m)),
+      },
+    });
+  } catch {
+    console.error('[content] code=PUBLIC_ALBUM_DETAIL_FAILED');
+    return c.json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal memuat detail album' } }, 500);
+  }
+});
+
+app.get('/public/stats', async (c) => {
+  const config = resolveConfig(c.env);
+  if (!config.databaseUrl) {
+    return c.json({ data: { activeMembers: 0, alumni: 0, programs: 0, universities: 0 } });
+  }
+  try {
+    const sql = neon(config.databaseUrl);
+    const rows = await sql`
+      SELECT
+        (SELECT COUNT(*)::int FROM member_profiles WHERE status = 'active' AND member_type = 'active' AND deleted_at IS NULL) AS active_members,
+        (SELECT COUNT(*)::int FROM member_profiles WHERE status = 'active' AND member_type = 'alumni' AND deleted_at IS NULL) AS alumni,
+        (SELECT COUNT(*)::int FROM programs WHERE status = 'published' AND deleted_at IS NULL) AS programs,
+        (SELECT COUNT(*)::int FROM universities WHERE is_active = true) AS universities
+    `;
+    const r = rows[0] ?? {};
+    return c.json({
+      data: {
+        activeMembers: Number(r.active_members ?? 0),
+        alumni: Number(r.alumni ?? 0),
+        programs: Number(r.programs ?? 0),
+        universities: Number(r.universities ?? 0),
+      },
+    });
+  } catch {
+    console.error('[content] code=PUBLIC_STATS_FAILED');
+    return c.json({ data: { activeMembers: 0, alumni: 0, programs: 0, universities: 0 } });
+  }
+});
+
+// ============================================================================
+// 7. ADMIN KONTEN (Admin Konten & Super Admin)
+// ============================================================================
+const SIGNATURE_FOLDERS: Record<string, { folder: string; formats: string; resource: 'image' | 'auto' }> = {
+  program: { folder: 'kappama/programs', formats: 'jpg,png,webp', resource: 'image' },
+  album: { folder: 'kappama/albums', formats: 'jpg,png,webp', resource: 'image' },
+  leader: { folder: 'kappama/leaders', formats: 'jpg,png,webp', resource: 'image' },
+  org: { folder: 'kappama/org', formats: 'jpg,png,webp', resource: 'image' },
+  bylaws: { folder: 'kappama/bylaws', formats: 'pdf', resource: 'auto' },
+};
+
+app.post('/admin/uploads/signature', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+
+  const body = await c.req.json().catch(() => null);
+  const parsed = signatureRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return validationError(c, 'Validasi berkas gagal', parsed.error.flatten());
+  }
+
+  const config = resolveConfig(c.env);
+  if (!config.cloudinary.isConfigured) {
+    return c.json(
+      {
+        error: {
+          code: 'STORAGE_NOT_CONFIGURED',
+          message:
+            'Layanan penyimpanan belum dikonfigurasi. Hubungi Super Admin atau gunakan tautan berkas statis.',
+        },
+      },
+      503
+    );
+  }
+
+  const target = SIGNATURE_FOLDERS[parsed.data.kind];
+  const storage = storageFor(c);
+  try {
+    const signature = await storage.createUploadSignature({
+      folder: target.folder,
+      publicId: crypto.randomUUID(),
+      resourceType: target.resource,
+      allowedFormats: target.formats,
+    });
+    return c.json({ data: signature });
+  } catch {
+    console.error('[content] code=SIGNATURE_FAILED');
+    return c.json(
+      { error: { code: 'STORAGE_ERROR', message: 'Gagal menyiapkan unggahan. Coba lagi.' } },
+      500
+    );
+  }
+});
+
+app.get('/admin/content/summary', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+  const rows = await sql`
+    SELECT
+      (SELECT COUNT(*)::int FROM member_profiles WHERE status = 'pending' AND deleted_at IS NULL) AS pending_members,
+      (SELECT COUNT(*)::int FROM programs WHERE status = 'draft' AND deleted_at IS NULL) AS draft_programs,
+      (SELECT COUNT(*)::int FROM programs WHERE status = 'published' AND deleted_at IS NULL) AS published_programs,
+      (SELECT COUNT(*)::int FROM albums WHERE status = 'draft' AND deleted_at IS NULL) AS draft_albums,
+      (SELECT COUNT(*)::int FROM albums WHERE status = 'published' AND deleted_at IS NULL) AS published_albums,
+      (SELECT COUNT(*)::int FROM org_periods) AS periods,
+      (SELECT COUNT(*)::int FROM bylaws_documents) AS bylaws
+  `;
+  const r = rows[0] ?? {};
+  return c.json({
+    data: {
+      pendingMembers: Number(r.pending_members ?? 0),
+      draftPrograms: Number(r.draft_programs ?? 0),
+      publishedPrograms: Number(r.published_programs ?? 0),
+      draftAlbums: Number(r.draft_albums ?? 0),
+      publishedAlbums: Number(r.published_albums ?? 0),
+      periods: Number(r.periods ?? 0),
+      bylaws: Number(r.bylaws ?? 0),
+    },
+  });
+});
+
+// --- Profil organisasi ---
+app.get('/admin/content/org', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+  const rows = await sql`
+    SELECT id, about_text, vision_text, missions, contact_email, contact_instagram, contact_address, logo_key, updated_at
+    FROM org_profile
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `;
+  if (rows.length === 0) return c.json({ data: null });
+  const r = rows[0];
+  return c.json({
+    data: {
+      id: r.id,
+      aboutText: r.about_text,
+      visionText: r.vision_text,
+      missions: Array.isArray(r.missions) ? r.missions : [],
+      contactEmail: r.contact_email,
+      contactInstagram: r.contact_instagram,
+      contactAddress: r.contact_address,
+      logoKey: r.logo_key,
+      logoUrl: assetUrl(c, r.logo_key ?? null, 256),
+      updatedAt: r.updated_at,
+    },
+  });
+});
+
+app.put('/admin/content/org', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const body = await c.req.json().catch(() => null);
+  const parsed = orgProfileInputSchema.safeParse(body);
+  if (!parsed.success) return validationError(c, 'Validasi profil organisasi gagal', parsed.error.flatten());
+  const input = parsed.data;
+
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+  const existing = await sql`SELECT id FROM org_profile ORDER BY updated_at DESC LIMIT 1`;
+
+  let id: string;
+  if (existing.length > 0) {
+    id = existing[0].id;
+    await sql`
+      UPDATE org_profile
+      SET about_text = ${input.aboutText}, vision_text = ${input.visionText},
+          missions = ${JSON.stringify(input.missions)}::jsonb,
+          contact_email = ${input.contactEmail}, contact_instagram = ${input.contactInstagram},
+          contact_address = ${input.contactAddress}, logo_key = ${input.logoKey}, updated_at = NOW()
+      WHERE id = ${id}
+    `;
+  } else {
+    const inserted = await sql`
+      INSERT INTO org_profile (about_text, vision_text, missions, contact_email, contact_instagram, contact_address, logo_key)
+      VALUES (${input.aboutText}, ${input.visionText}, ${JSON.stringify(input.missions)}::jsonb,
+              ${input.contactEmail}, ${input.contactInstagram}, ${input.contactAddress}, ${input.logoKey})
+      RETURNING id
+    `;
+    id = inserted[0].id;
+  }
+
+  await writeAudit(sql, gate.user.id, 'CONTENT_ORG_UPDATED', 'org_profile', id, { fields: 'about,vision,missions,contact' });
+  return c.json({ data: { id, message: 'Profil organisasi berhasil disimpan' } });
+});
+
+// --- Periode & struktur organisasi ---
+app.get('/admin/content/periods', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+  const rows = await sql`
+    SELECT p.id, p.period_label, p.start_year, p.end_year, p.is_current,
+           (SELECT COUNT(*)::int FROM org_leaders l WHERE l.period_id = p.id) AS leader_count
+    FROM org_periods p
+    ORDER BY p.start_year DESC, p.created_at DESC
+  `;
+  return c.json({
+    data: rows.map((r: Record<string, unknown>) => ({
+      id: r.id,
+      periodLabel: r.period_label,
+      startYear: r.start_year,
+      endYear: r.end_year,
+      isCurrent: r.is_current,
+      leaderCount: Number(r.leader_count ?? 0),
+    })),
+  });
+});
+
+app.post('/admin/content/periods', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const body = await c.req.json().catch(() => null);
+  const parsed = periodInputSchema.safeParse(body);
+  if (!parsed.success) return validationError(c, 'Validasi periode gagal', parsed.error.flatten());
+  const input = parsed.data;
+
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+  if (input.isCurrent) {
+    await sql`UPDATE org_periods SET is_current = false, updated_at = NOW() WHERE is_current = true`;
+  }
+  const rows = await sql`
+    INSERT INTO org_periods (period_label, start_year, end_year, is_current)
+    VALUES (${input.periodLabel}, ${input.startYear}, ${input.endYear}, ${input.isCurrent})
+    RETURNING id
+  `;
+  await writeAudit(sql, gate.user.id, 'CONTENT_PERIOD_CREATED', 'org_periods', rows[0].id, {
+    isCurrent: input.isCurrent,
+  });
+  return c.json({ data: { id: rows[0].id } }, 201);
+});
+
+app.put('/admin/content/periods/:id', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const body = await c.req.json().catch(() => null);
+  const parsed = periodInputSchema.safeParse(body);
+  if (!parsed.success) return validationError(c, 'Validasi periode gagal', parsed.error.flatten());
+  const input = parsed.data;
+  const id = c.req.param('id');
+
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+  if (input.isCurrent) {
+    await sql`UPDATE org_periods SET is_current = false, updated_at = NOW() WHERE is_current = true AND id <> ${id}`;
+  }
+  const rows = await sql`
+    UPDATE org_periods
+    SET period_label = ${input.periodLabel}, start_year = ${input.startYear},
+        end_year = ${input.endYear}, is_current = ${input.isCurrent}, updated_at = NOW()
+    WHERE id = ${id}
+    RETURNING id
+  `;
+  if (rows.length === 0) return c.json({ error: { code: 'NOT_FOUND', message: 'Periode tidak ditemukan' } }, 404);
+  await writeAudit(sql, gate.user.id, 'CONTENT_PERIOD_UPDATED', 'org_periods', id, { isCurrent: input.isCurrent });
+  return c.json({ data: { id } });
+});
+
+app.post('/admin/content/periods/:id/activate', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const id = c.req.param('id');
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+
+  const rows = await sql`SELECT id FROM org_periods WHERE id = ${id} LIMIT 1`;
+  if (rows.length === 0) return c.json({ error: { code: 'NOT_FOUND', message: 'Periode tidak ditemukan' } }, 404);
+
+  await sql`UPDATE org_periods SET is_current = false, updated_at = NOW() WHERE is_current = true`;
+  await sql`UPDATE org_periods SET is_current = true, updated_at = NOW() WHERE id = ${id}`;
+  await writeAudit(sql, gate.user.id, 'CONTENT_PERIOD_ACTIVATED', 'org_periods', id);
+  return c.json({ data: { message: 'Periode aktif diperbarui' } });
+});
+
+app.delete('/admin/content/periods/:id', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const id = c.req.param('id');
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+
+  const photos = await sql`SELECT photo_key FROM org_leaders WHERE period_id = ${id}`;
+  const rows = await sql`DELETE FROM org_periods WHERE id = ${id} RETURNING id`;
+  if (rows.length === 0) return c.json({ error: { code: 'NOT_FOUND', message: 'Periode tidak ditemukan' } }, 404);
+
+  for (const row of photos) await deleteStoredAsset(c, row.photo_key ?? null);
+  await writeAudit(sql, gate.user.id, 'CONTENT_PERIOD_DELETED', 'org_periods', id);
+  return c.json({ data: { message: 'Periode dihapus' } });
+});
+
+app.get('/admin/content/leaders', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const periodId = c.req.query('periodId');
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+  const rows = periodId
+    ? await sql`
+        SELECT id, period_id, position, name, photo_key, campus_study, sort_order
+        FROM org_leaders WHERE period_id = ${periodId}
+        ORDER BY sort_order ASC, created_at ASC
+      `
+    : await sql`
+        SELECT id, period_id, position, name, photo_key, campus_study, sort_order
+        FROM org_leaders ORDER BY period_id, sort_order ASC, created_at ASC
+      `;
+  return c.json({
+    data: rows.map((r: Record<string, unknown>) => ({
+      id: r.id,
+      periodId: r.period_id,
+      position: r.position,
+      name: r.name,
+      photoKey: r.photo_key,
+      photoUrl: assetUrl(c, (r.photo_key as string) ?? null, 400),
+      campusStudy: r.campus_study,
+      sortOrder: r.sort_order,
+    })),
+  });
+});
+
+app.post('/admin/content/leaders', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const body = await c.req.json().catch(() => null);
+  const parsed = leaderInputSchema.safeParse(body);
+  if (!parsed.success) return validationError(c, 'Validasi pengurus gagal', parsed.error.flatten());
+  const input = parsed.data;
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+
+  const period = await sql`SELECT id FROM org_periods WHERE id = ${input.periodId} LIMIT 1`;
+  if (period.length === 0) return validationError(c, 'Periode tidak ditemukan');
+
+  const rows = await sql`
+    INSERT INTO org_leaders (period_id, position, name, photo_key, campus_study, sort_order)
+    VALUES (${input.periodId}, ${input.position}, ${input.name}, ${input.photoKey}, ${input.campusStudy}, ${input.sortOrder})
+    RETURNING id
+  `;
+  await writeAudit(sql, gate.user.id, 'CONTENT_LEADER_CREATED', 'org_leaders', rows[0].id, { position: input.position });
+  return c.json({ data: { id: rows[0].id } }, 201);
+});
+
+app.put('/admin/content/leaders/:id', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const body = await c.req.json().catch(() => null);
+  const parsed = leaderInputSchema.safeParse(body);
+  if (!parsed.success) return validationError(c, 'Validasi pengurus gagal', parsed.error.flatten());
+  const input = parsed.data;
+  const id = c.req.param('id');
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+
+  const previous = await sql`SELECT photo_key FROM org_leaders WHERE id = ${id} LIMIT 1`;
+  if (previous.length === 0) return c.json({ error: { code: 'NOT_FOUND', message: 'Pengurus tidak ditemukan' } }, 404);
+
+  await sql`
+    UPDATE org_leaders
+    SET period_id = ${input.periodId}, position = ${input.position}, name = ${input.name},
+        photo_key = ${input.photoKey}, campus_study = ${input.campusStudy},
+        sort_order = ${input.sortOrder}, updated_at = NOW()
+    WHERE id = ${id}
+  `;
+  if (previous[0].photo_key && previous[0].photo_key !== input.photoKey) {
+    await deleteStoredAsset(c, previous[0].photo_key);
+  }
+  await writeAudit(sql, gate.user.id, 'CONTENT_LEADER_UPDATED', 'org_leaders', id, { position: input.position });
+  return c.json({ data: { id } });
+});
+
+app.delete('/admin/content/leaders/:id', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const id = c.req.param('id');
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+  const rows = await sql`DELETE FROM org_leaders WHERE id = ${id} RETURNING photo_key`;
+  if (rows.length === 0) return c.json({ error: { code: 'NOT_FOUND', message: 'Pengurus tidak ditemukan' } }, 404);
+  await deleteStoredAsset(c, rows[0].photo_key ?? null);
+  await writeAudit(sql, gate.user.id, 'CONTENT_LEADER_DELETED', 'org_leaders', id);
+  return c.json({ data: { message: 'Pengurus dihapus' } });
+});
+
+// --- AD/ART ---
+app.get('/admin/content/bylaws', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+  const rows = await sql`
+    SELECT id, title, file_key, effective_date, is_active
+    FROM bylaws_documents
+    ORDER BY is_active DESC, effective_date DESC, created_at DESC
+  `;
+  return c.json({
+    data: rows.map((r: Record<string, unknown>) => ({
+      id: r.id,
+      title: r.title,
+      fileKey: r.file_key,
+      fileUrl: assetUrl(c, (r.file_key as string) ?? null),
+      effectiveDate: r.effective_date,
+      isActive: r.is_active,
+    })),
+  });
+});
+
+app.post('/admin/content/bylaws', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const body = await c.req.json().catch(() => null);
+  const parsed = bylawsInputSchema.safeParse(body);
+  if (!parsed.success) return validationError(c, 'Validasi AD/ART gagal', parsed.error.flatten());
+  const input = parsed.data;
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+
+  if (input.isActive) {
+    await sql`UPDATE bylaws_documents SET is_active = false, updated_at = NOW() WHERE is_active = true`;
+  }
+  const rows = await sql`
+    INSERT INTO bylaws_documents (title, file_key, effective_date, is_active)
+    VALUES (${input.title}, ${input.fileKey}, ${input.effectiveDate}, ${input.isActive})
+    RETURNING id
+  `;
+  await writeAudit(sql, gate.user.id, 'CONTENT_BYLAWS_CREATED', 'bylaws_documents', rows[0].id, {
+    isActive: input.isActive,
+  });
+  return c.json({ data: { id: rows[0].id } }, 201);
+});
+
+app.put('/admin/content/bylaws/:id', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const body = await c.req.json().catch(() => null);
+  const parsed = bylawsInputSchema.safeParse(body);
+  if (!parsed.success) return validationError(c, 'Validasi AD/ART gagal', parsed.error.flatten());
+  const input = parsed.data;
+  const id = c.req.param('id');
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+
+  const previous = await sql`SELECT file_key FROM bylaws_documents WHERE id = ${id} LIMIT 1`;
+  if (previous.length === 0) return c.json({ error: { code: 'NOT_FOUND', message: 'Dokumen tidak ditemukan' } }, 404);
+
+  if (input.isActive) {
+    await sql`UPDATE bylaws_documents SET is_active = false, updated_at = NOW() WHERE is_active = true AND id <> ${id}`;
+  }
+  await sql`
+    UPDATE bylaws_documents
+    SET title = ${input.title}, file_key = ${input.fileKey}, effective_date = ${input.effectiveDate},
+        is_active = ${input.isActive}, updated_at = NOW()
+    WHERE id = ${id}
+  `;
+  if (previous[0].file_key && previous[0].file_key !== input.fileKey) {
+    await deleteStoredAsset(c, previous[0].file_key);
+  }
+  await writeAudit(sql, gate.user.id, 'CONTENT_BYLAWS_UPDATED', 'bylaws_documents', id, { isActive: input.isActive });
+  return c.json({ data: { id } });
+});
+
+app.delete('/admin/content/bylaws/:id', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const id = c.req.param('id');
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+  const rows = await sql`DELETE FROM bylaws_documents WHERE id = ${id} RETURNING file_key`;
+  if (rows.length === 0) return c.json({ error: { code: 'NOT_FOUND', message: 'Dokumen tidak ditemukan' } }, 404);
+  await deleteStoredAsset(c, rows[0].file_key ?? null);
+  await writeAudit(sql, gate.user.id, 'CONTENT_BYLAWS_DELETED', 'bylaws_documents', id);
+  return c.json({ data: { message: 'Dokumen dihapus' } });
+});
+
+// --- Program kerja ---
+app.get('/admin/content/programs', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+  const rows = await sql`
+    SELECT p.id, p.title, p.slug, p.year, p.event_date, p.status, p.cover_key, p.university_id,
+           u.name AS university_name,
+           (SELECT COUNT(*)::int FROM program_media m WHERE m.program_id = p.id AND m.media_type = 'image') AS photo_count,
+           (SELECT COUNT(*)::int FROM program_media m WHERE m.program_id = p.id AND m.media_type = 'youtube') AS video_count,
+           p.updated_at
+    FROM programs p
+    LEFT JOIN universities u ON p.university_id = u.id
+    WHERE p.deleted_at IS NULL
+    ORDER BY p.year DESC, p.updated_at DESC
+    LIMIT 200
+  `;
+  return c.json({
+    data: rows.map((r: Record<string, unknown>) => ({
+      id: r.id,
+      title: r.title,
+      slug: r.slug,
+      year: r.year,
+      eventDate: r.event_date,
+      status: r.status,
+      coverUrl: assetUrl(c, (r.cover_key as string) ?? null, 400),
+      universityId: r.university_id,
+      universityName: r.university_name,
+      photoCount: Number(r.photo_count ?? 0),
+      videoCount: Number(r.video_count ?? 0),
+      updatedAt: r.updated_at,
+    })),
+  });
+});
+
+app.get('/admin/content/programs/:id', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+  const rows = await sql`
+    SELECT id, title, slug, year, event_date, location, summary, description, objectives, targets,
+           pic_name, cover_key, university_id, status
+    FROM programs WHERE id = ${c.req.param('id')} AND deleted_at IS NULL LIMIT 1
+  `;
+  if (rows.length === 0) return c.json({ error: { code: 'NOT_FOUND', message: 'Program kerja tidak ditemukan' } }, 404);
+  const media = await sql`
+    SELECT id, media_type, file_key, youtube_id, caption, sort_order
+    FROM program_media WHERE program_id = ${rows[0].id}
+    ORDER BY sort_order ASC, created_at ASC
+  `;
+  const r = rows[0];
+  return c.json({
+    data: {
+      id: r.id,
+      title: r.title,
+      slug: r.slug,
+      year: r.year,
+      eventDate: r.event_date,
+      location: r.location,
+      summary: r.summary,
+      description: r.description,
+      objectives: r.objectives,
+      targets: r.targets,
+      picName: r.pic_name,
+      coverKey: r.cover_key,
+      coverUrl: assetUrl(c, r.cover_key ?? null, 400),
+      universityId: r.university_id,
+      status: r.status,
+      media: media.map((m: Record<string, unknown>) => publicMedia(c, m)),
+    },
+  });
+});
+
+async function assertSlugFree(
+  sql: NeonQueryFunction<false, false>,
+  table: 'programs' | 'albums',
+  slug: string,
+  excludeId?: string
+): Promise<boolean> {
+  const rows =
+    table === 'programs'
+      ? excludeId
+        ? await sql`SELECT id FROM programs WHERE slug = ${slug} AND id <> ${excludeId} LIMIT 1`
+        : await sql`SELECT id FROM programs WHERE slug = ${slug} LIMIT 1`
+      : excludeId
+        ? await sql`SELECT id FROM albums WHERE slug = ${slug} AND id <> ${excludeId} LIMIT 1`
+        : await sql`SELECT id FROM albums WHERE slug = ${slug} LIMIT 1`;
+  return rows.length === 0;
+}
+
+app.post('/admin/content/programs', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const body = await c.req.json().catch(() => null);
+  const parsed = programInputSchema.safeParse(body);
+  if (!parsed.success) return validationError(c, 'Validasi program kerja gagal', parsed.error.flatten());
+  const input = parsed.data;
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+
+  if (!(await assertSlugFree(sql, 'programs', input.slug))) {
+    return c.json({ error: { code: 'SLUG_TAKEN', message: 'Slug sudah dipakai program lain' } }, 409);
+  }
+
+  const rows = await sql`
+    INSERT INTO programs (title, slug, year, event_date, location, summary, description, objectives,
+                          targets, pic_name, cover_key, university_id, status)
+    VALUES (${input.title}, ${input.slug}, ${input.year}, ${input.eventDate}, ${input.location},
+            ${input.summary}, ${input.description}, ${input.objectives}, ${input.targets},
+            ${input.picName}, ${input.coverKey}, ${input.universityId}, ${input.status})
+    RETURNING id
+  `;
+  await writeAudit(sql, gate.user.id, 'CONTENT_PROGRAM_CREATED', 'programs', rows[0].id, { status: input.status });
+  return c.json({ data: { id: rows[0].id } }, 201);
+});
+
+app.put('/admin/content/programs/:id', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const id = c.req.param('id');
+  const body = await c.req.json().catch(() => null);
+  const parsed = programInputSchema.safeParse(body);
+  if (!parsed.success) return validationError(c, 'Validasi program kerja gagal', parsed.error.flatten());
+  const input = parsed.data;
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+
+  if (!(await assertSlugFree(sql, 'programs', input.slug, id))) {
+    return c.json({ error: { code: 'SLUG_TAKEN', message: 'Slug sudah dipakai program lain' } }, 409);
+  }
+
+  const previous = await sql`SELECT cover_key FROM programs WHERE id = ${id} AND deleted_at IS NULL LIMIT 1`;
+  if (previous.length === 0) return c.json({ error: { code: 'NOT_FOUND', message: 'Program kerja tidak ditemukan' } }, 404);
+
+  await sql`
+    UPDATE programs
+    SET title = ${input.title}, slug = ${input.slug}, year = ${input.year}, event_date = ${input.eventDate},
+        location = ${input.location}, summary = ${input.summary}, description = ${input.description},
+        objectives = ${input.objectives}, targets = ${input.targets}, pic_name = ${input.picName},
+        cover_key = ${input.coverKey}, university_id = ${input.universityId},
+        status = ${input.status}, updated_at = NOW()
+    WHERE id = ${id}
+  `;
+  if (previous[0].cover_key && previous[0].cover_key !== input.coverKey) {
+    await deleteStoredAsset(c, previous[0].cover_key);
+  }
+  await writeAudit(sql, gate.user.id, 'CONTENT_PROGRAM_UPDATED', 'programs', id, { status: input.status });
+  return c.json({ data: { id } });
+});
+
+app.post('/admin/content/programs/:id/status', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const body = await c.req.json().catch(() => null);
+  const parsed = statusInputSchema.safeParse(body);
+  if (!parsed.success) return validationError(c, 'Status tidak valid');
+  const id = c.req.param('id');
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+  const rows = await sql`
+    UPDATE programs SET status = ${parsed.data.status}, updated_at = NOW()
+    WHERE id = ${id} AND deleted_at IS NULL RETURNING id
+  `;
+  if (rows.length === 0) return c.json({ error: { code: 'NOT_FOUND', message: 'Program kerja tidak ditemukan' } }, 404);
+  await writeAudit(
+    sql,
+    gate.user.id,
+    parsed.data.status === 'published' ? 'CONTENT_PROGRAM_PUBLISHED' : 'CONTENT_PROGRAM_UNPUBLISHED',
+    'programs',
+    id
+  );
+  return c.json({ data: { message: 'Status program kerja diperbarui' } });
+});
+
+app.delete('/admin/content/programs/:id', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const id = c.req.param('id');
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+
+  const media = await sql`SELECT file_key FROM program_media WHERE program_id = ${id}`;
+  const rows = await sql`
+    UPDATE programs SET deleted_at = NOW(), updated_at = NOW()
+    WHERE id = ${id} AND deleted_at IS NULL RETURNING cover_key
+  `;
+  if (rows.length === 0) return c.json({ error: { code: 'NOT_FOUND', message: 'Program kerja tidak ditemukan' } }, 404);
+
+  await deleteStoredAsset(c, rows[0].cover_key ?? null);
+  for (const row of media) await deleteStoredAsset(c, row.file_key ?? null);
+  await writeAudit(sql, gate.user.id, 'CONTENT_PROGRAM_DELETED', 'programs', id, { softDelete: true });
+  return c.json({ data: { message: 'Program kerja dihapus' } });
+});
+
+app.post('/admin/content/programs/:id/media', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const programId = c.req.param('id');
+  const body = await c.req.json().catch(() => null);
+  const parsed = mediaInputSchema.safeParse(body);
+  if (!parsed.success) return validationError(c, 'Validasi media gagal', parsed.error.flatten());
+  const input = parsed.data;
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+
+  const parent = await sql`SELECT id FROM programs WHERE id = ${programId} AND deleted_at IS NULL LIMIT 1`;
+  if (parent.length === 0) return c.json({ error: { code: 'NOT_FOUND', message: 'Program kerja tidak ditemukan' } }, 404);
+
+  if (input.mediaType === 'image') {
+    const count = await sql`
+      SELECT COUNT(*)::int AS total FROM program_media WHERE program_id = ${programId} AND media_type = 'image'
+    `;
+    if (Number(count[0]?.total ?? 0) >= 30) {
+      return c.json({ error: { code: 'MEDIA_LIMIT', message: 'Maksimal 30 foto per program kerja' } }, 409);
+    }
+  }
+
+  const youtubeId = input.mediaType === 'youtube' ? extractYouTubeId(input.youtubeUrl ?? '') : null;
+  const rows = await sql`
+    INSERT INTO program_media (program_id, media_type, file_key, youtube_id, caption, sort_order)
+    VALUES (${programId}, ${input.mediaType}, ${input.fileKey}, ${youtubeId},
+            ${input.caption}, COALESCE((SELECT MAX(sort_order) + 1 FROM program_media WHERE program_id = ${programId}), 1))
+    RETURNING id
+  `;
+  await writeAudit(sql, gate.user.id, 'CONTENT_PROGRAM_MEDIA_ADDED', 'program_media', rows[0].id, {
+    mediaType: input.mediaType,
+  });
+  return c.json({ data: { id: rows[0].id } }, 201);
+});
+
+app.put('/admin/content/program-media/:id', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const body = await c.req.json().catch(() => null);
+  const parsed = mediaUpdateSchema.safeParse(body);
+  if (!parsed.success) return validationError(c, 'Validasi media gagal', parsed.error.flatten());
+  const id = c.req.param('id');
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+  const rows = await sql`
+    UPDATE program_media
+    SET caption = ${parsed.data.caption},
+        sort_order = COALESCE(${parsed.data.sortOrder ?? null}, sort_order)
+    WHERE id = ${id} RETURNING id
+  `;
+  if (rows.length === 0) return c.json({ error: { code: 'NOT_FOUND', message: 'Media tidak ditemukan' } }, 404);
+  await writeAudit(sql, gate.user.id, 'CONTENT_PROGRAM_MEDIA_UPDATED', 'program_media', id);
+  return c.json({ data: { message: 'Media diperbarui' } });
+});
+
+app.delete('/admin/content/program-media/:id', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const id = c.req.param('id');
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+  const rows = await sql`DELETE FROM program_media WHERE id = ${id} RETURNING file_key`;
+  if (rows.length === 0) return c.json({ error: { code: 'NOT_FOUND', message: 'Media tidak ditemukan' } }, 404);
+  await deleteStoredAsset(c, rows[0].file_key ?? null);
+  await writeAudit(sql, gate.user.id, 'CONTENT_PROGRAM_MEDIA_DELETED', 'program_media', id);
+  return c.json({ data: { message: 'Media dihapus' } });
+});
+
+// --- Galeri / album ---
+app.get('/admin/content/albums', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+  const rows = await sql`
+    SELECT a.id, a.title, a.slug, a.year, a.event_date, a.status, a.cover_key, a.program_id,
+           (SELECT COUNT(*)::int FROM album_media m WHERE m.album_id = a.id AND m.media_type = 'image') AS photo_count,
+           (SELECT COUNT(*)::int FROM album_media m WHERE m.album_id = a.id AND m.media_type = 'youtube') AS video_count,
+           a.updated_at
+    FROM albums a
+    WHERE a.deleted_at IS NULL
+    ORDER BY a.year DESC, a.updated_at DESC
+    LIMIT 200
+  `;
+  return c.json({
+    data: rows.map((r: Record<string, unknown>) => ({
+      id: r.id,
+      title: r.title,
+      slug: r.slug,
+      year: r.year,
+      eventDate: r.event_date,
+      status: r.status,
+      coverUrl: assetUrl(c, (r.cover_key as string) ?? null, 400),
+      programId: r.program_id,
+      photoCount: Number(r.photo_count ?? 0),
+      videoCount: Number(r.video_count ?? 0),
+      updatedAt: r.updated_at,
+    })),
+  });
+});
+
+app.get('/admin/content/albums/:id', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+  const rows = await sql`
+    SELECT id, title, slug, year, event_date, description, cover_key, program_id, status
+    FROM albums WHERE id = ${c.req.param('id')} AND deleted_at IS NULL LIMIT 1
+  `;
+  if (rows.length === 0) return c.json({ error: { code: 'NOT_FOUND', message: 'Album tidak ditemukan' } }, 404);
+  const media = await sql`
+    SELECT id, media_type, file_key, youtube_id, caption, sort_order
+    FROM album_media WHERE album_id = ${rows[0].id}
+    ORDER BY sort_order ASC, created_at ASC
+  `;
+  const r = rows[0];
+  return c.json({
+    data: {
+      id: r.id,
+      title: r.title,
+      slug: r.slug,
+      year: r.year,
+      eventDate: r.event_date,
+      description: r.description,
+      coverKey: r.cover_key,
+      coverUrl: assetUrl(c, r.cover_key ?? null, 400),
+      programId: r.program_id,
+      status: r.status,
+      media: media.map((m: Record<string, unknown>) => publicMedia(c, m)),
+    },
+  });
+});
+
+app.post('/admin/content/albums', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const body = await c.req.json().catch(() => null);
+  const parsed = albumInputSchema.safeParse(body);
+  if (!parsed.success) return validationError(c, 'Validasi album gagal', parsed.error.flatten());
+  const input = parsed.data;
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+
+  if (!(await assertSlugFree(sql, 'albums', input.slug))) {
+    return c.json({ error: { code: 'SLUG_TAKEN', message: 'Slug sudah dipakai album lain' } }, 409);
+  }
+
+  const rows = await sql`
+    INSERT INTO albums (title, slug, year, event_date, description, cover_key, program_id, status)
+    VALUES (${input.title}, ${input.slug}, ${input.year}, ${input.eventDate}, ${input.description},
+            ${input.coverKey}, ${input.programId}, ${input.status})
+    RETURNING id
+  `;
+  await writeAudit(sql, gate.user.id, 'CONTENT_ALBUM_CREATED', 'albums', rows[0].id, { status: input.status });
+  return c.json({ data: { id: rows[0].id } }, 201);
+});
+
+app.put('/admin/content/albums/:id', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const id = c.req.param('id');
+  const body = await c.req.json().catch(() => null);
+  const parsed = albumInputSchema.safeParse(body);
+  if (!parsed.success) return validationError(c, 'Validasi album gagal', parsed.error.flatten());
+  const input = parsed.data;
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+
+  if (!(await assertSlugFree(sql, 'albums', input.slug, id))) {
+    return c.json({ error: { code: 'SLUG_TAKEN', message: 'Slug sudah dipakai album lain' } }, 409);
+  }
+
+  const previous = await sql`SELECT cover_key FROM albums WHERE id = ${id} AND deleted_at IS NULL LIMIT 1`;
+  if (previous.length === 0) return c.json({ error: { code: 'NOT_FOUND', message: 'Album tidak ditemukan' } }, 404);
+
+  await sql`
+    UPDATE albums
+    SET title = ${input.title}, slug = ${input.slug}, year = ${input.year}, event_date = ${input.eventDate},
+        description = ${input.description}, cover_key = ${input.coverKey}, program_id = ${input.programId},
+        status = ${input.status}, updated_at = NOW()
+    WHERE id = ${id}
+  `;
+  if (previous[0].cover_key && previous[0].cover_key !== input.coverKey) {
+    await deleteStoredAsset(c, previous[0].cover_key);
+  }
+  await writeAudit(sql, gate.user.id, 'CONTENT_ALBUM_UPDATED', 'albums', id, { status: input.status });
+  return c.json({ data: { id } });
+});
+
+app.post('/admin/content/albums/:id/status', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const body = await c.req.json().catch(() => null);
+  const parsed = statusInputSchema.safeParse(body);
+  if (!parsed.success) return validationError(c, 'Status tidak valid');
+  const id = c.req.param('id');
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+  const rows = await sql`
+    UPDATE albums SET status = ${parsed.data.status}, updated_at = NOW()
+    WHERE id = ${id} AND deleted_at IS NULL RETURNING id
+  `;
+  if (rows.length === 0) return c.json({ error: { code: 'NOT_FOUND', message: 'Album tidak ditemukan' } }, 404);
+  await writeAudit(
+    sql,
+    gate.user.id,
+    parsed.data.status === 'published' ? 'CONTENT_ALBUM_PUBLISHED' : 'CONTENT_ALBUM_UNPUBLISHED',
+    'albums',
+    id
+  );
+  return c.json({ data: { message: 'Status album diperbarui' } });
+});
+
+app.delete('/admin/content/albums/:id', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const id = c.req.param('id');
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+
+  const media = await sql`SELECT file_key FROM album_media WHERE album_id = ${id}`;
+  const rows = await sql`
+    UPDATE albums SET deleted_at = NOW(), updated_at = NOW()
+    WHERE id = ${id} AND deleted_at IS NULL RETURNING cover_key
+  `;
+  if (rows.length === 0) return c.json({ error: { code: 'NOT_FOUND', message: 'Album tidak ditemukan' } }, 404);
+
+  await deleteStoredAsset(c, rows[0].cover_key ?? null);
+  for (const row of media) await deleteStoredAsset(c, row.file_key ?? null);
+  await writeAudit(sql, gate.user.id, 'CONTENT_ALBUM_DELETED', 'albums', id, { softDelete: true });
+  return c.json({ data: { message: 'Album dihapus' } });
+});
+
+app.post('/admin/content/albums/:id/media', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const albumId = c.req.param('id');
+  const body = await c.req.json().catch(() => null);
+  const parsed = mediaInputSchema.safeParse(body);
+  if (!parsed.success) return validationError(c, 'Validasi media gagal', parsed.error.flatten());
+  const input = parsed.data;
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+
+  const parent = await sql`SELECT id FROM albums WHERE id = ${albumId} AND deleted_at IS NULL LIMIT 1`;
+  if (parent.length === 0) return c.json({ error: { code: 'NOT_FOUND', message: 'Album tidak ditemukan' } }, 404);
+
+  if (input.mediaType === 'image') {
+    const count = await sql`
+      SELECT COUNT(*)::int AS total FROM album_media WHERE album_id = ${albumId} AND media_type = 'image'
+    `;
+    if (Number(count[0]?.total ?? 0) >= 60) {
+      return c.json({ error: { code: 'MEDIA_LIMIT', message: 'Maksimal 60 foto per album' } }, 409);
+    }
+  }
+
+  const youtubeId = input.mediaType === 'youtube' ? extractYouTubeId(input.youtubeUrl ?? '') : null;
+  const rows = await sql`
+    INSERT INTO album_media (album_id, media_type, file_key, youtube_id, caption, sort_order)
+    VALUES (${albumId}, ${input.mediaType}, ${input.fileKey}, ${youtubeId},
+            ${input.caption}, COALESCE((SELECT MAX(sort_order) + 1 FROM album_media WHERE album_id = ${albumId}), 1))
+    RETURNING id
+  `;
+  await writeAudit(sql, gate.user.id, 'CONTENT_ALBUM_MEDIA_ADDED', 'album_media', rows[0].id, {
+    mediaType: input.mediaType,
+  });
+  return c.json({ data: { id: rows[0].id } }, 201);
+});
+
+app.put('/admin/content/album-media/:id', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const body = await c.req.json().catch(() => null);
+  const parsed = mediaUpdateSchema.safeParse(body);
+  if (!parsed.success) return validationError(c, 'Validasi media gagal', parsed.error.flatten());
+  const id = c.req.param('id');
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+  const rows = await sql`
+    UPDATE album_media
+    SET caption = ${parsed.data.caption},
+        sort_order = COALESCE(${parsed.data.sortOrder ?? null}, sort_order)
+    WHERE id = ${id} RETURNING id
+  `;
+  if (rows.length === 0) return c.json({ error: { code: 'NOT_FOUND', message: 'Media tidak ditemukan' } }, 404);
+  await writeAudit(sql, gate.user.id, 'CONTENT_ALBUM_MEDIA_UPDATED', 'album_media', id);
+  return c.json({ data: { message: 'Media diperbarui' } });
+});
+
+app.delete('/admin/content/album-media/:id', async (c) => {
+  const gate = await contentAdminGate(c);
+  if ('response' in gate) return gate.response;
+  const id = c.req.param('id');
+  const config = resolveConfig(c.env);
+  const sql = neon(config.databaseUrl!);
+  const rows = await sql`DELETE FROM album_media WHERE id = ${id} RETURNING file_key`;
+  if (rows.length === 0) return c.json({ error: { code: 'NOT_FOUND', message: 'Media tidak ditemukan' } }, 404);
+  await deleteStoredAsset(c, rows[0].file_key ?? null);
+  await writeAudit(sql, gate.user.id, 'CONTENT_ALBUM_MEDIA_DELETED', 'album_media', id);
+  return c.json({ data: { message: 'Media dihapus' } });
 });
 
 // Fallback untuk route API yang belum diimplementasikan
