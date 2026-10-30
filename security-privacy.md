@@ -27,7 +27,7 @@ Sebagai organisasi yang memproses data pribadi mahasiswa dan pelajar, KAPPAMA me
 |---|---|---|
 | **Bot Scraping & Registrasi Massal** | Spam database, kehabisan kuota gratis, data palsu | Cloudflare Turnstile diverifikasi di server; rate-limiting per IP pada endpoint onboarding; proteksi bot bawaan Clerk |
 | **Insecure Direct Object Reference (IDOR)** | Anggota mengedit profil orang lain atau mengakses data sensitif anggota lain | Verifikasi kepemilikan data (`userId === auth.userId`) atau validasi peran admin (`role IN ('content_admin', 'super_admin')`) di tingkat server |
-| **Cross-Site Scripting (XSS)** | Penyusupan script melalui deskripsi teks kaya proker atau profil | Sanitasi HTML ketat di server (whitelist tag aman: `p`, `b`, `i`, `ul`, `ol`, `li`, `h2`, `h3`, `a`); CSP ketat melalui Cloudflare `_headers` |
+| **Cross-Site Scripting (XSS)** | Penyusupan script melalui deskripsi program kerja, profil, atau nama pengurus | Konten **tidak menerima HTML**: tag dibuang di server (`stripHtmlTags`), klien merender sebagai teks React (auto-escape). YouTube hanya disimpan sebagai ID 11 karakter hasil ekstraksi server. Ditambah CSP ketat melalui Cloudflare `_headers`. |
 | **Data Exfiltration oleh Pihak Ketiga** | Kebocoran data direktori | Seluruh endpoint direktori `/api/members/*` mewajibkan token JWT Clerk dengan status keanggotaan `active`; pencarian tidak diindeks mesin pencari (`robots.txt: Disallow /anggota/`, `noindex`) |
 | **Penyalahgunaan Akun Admin** | Admin mengekspor atau menyunting data tanpa tanggung jawab | Setiap aktivitas ekspor data, persetujuan, penolakan, penangguhan (*suspend*), dan perubahan peran dicatat permanen di `audit_logs` |
 | **Penyusupan Berkas Unggahan** | Unggahan malware / eksekusi skrip berbahaya lewat file gambar | Validasi MIME type & ekstensi gambar; upload menggunakan direct signed upload Cloudinary berumur pendek yang dibatasi folder dan ukuran; `CLOUDINARY_API_SECRET` tersimpan aman di server dan tidak pernah terekspos ke klien |
@@ -44,6 +44,8 @@ Sebagai organisasi yang memproses data pribadi mahasiswa dan pelajar, KAPPAMA me
 | `USER_ROLE_CHANGED` | Super Admin | peran lama dan baru | email/nama pengguna |
 | `SUPER_ADMIN_BOOTSTRAPPED` | Sistem | sumber bootstrap (`bootstrap_email`) | email bootstrap |
 | `ADMIN_VIEWED_ADDRESS_DETAIL` | Admin | ID profil, nama field (`address_detail`) | isi alamat |
+| `CONTENT_*` (mis. `CONTENT_PROGRAM_CREATED`, `CONTENT_PROGRAM_PUBLISHED`, `CONTENT_ALBUM_DELETED`) | Admin Konten / Super Admin | aksi, ID entitas, status, tipe media | judul/deskripsi lengkap, isi PDF, URL berkas |
+| `CONTENT_BYLAWS_*` | Admin Konten / Super Admin | ID dokumen, status aktif | isi/tembusan PDF |
 
 ---
 
@@ -86,3 +88,26 @@ Untuk menjamin kelangsungan akses dan mencegah terkunci saat pergantian kepengur
    - Seluruh mutasi peran ini tercatat otomatis di `audit_logs`.
 3. **Prosedur Darurat (Emergency Recovery):**
    - Jika seluruh admin kehilangan akses, pemilik proyek dapat memanfaatkan environment variable darurat `BOOTSTRAP_SUPER_ADMIN_EMAIL` di Cloudflare Pages untuk mengembalikan hak akses akun resmi organisasi.
+
+---
+
+## 6. Kontrol Konten & Unggahan Berkas (Fase 4A)
+
+### 6.1 Otorisasi Panel Konten
+- Seluruh endpoint `/api/admin/content/*` dan `/api/admin/uploads/signature` memeriksa sesi Clerk **dan** peran pada tabel `users`. Tanpa sesi → `401`; peran `member`/`alumni`/`pending` → `403 FORBIDDEN`.
+- UI `/admin` hanya alat bantu: sidebar menyembunyikan menu sesuai peran, tetapi penolakan sebenarnya terjadi di server. Tidak ada data yang bergantung pada pemeriksaan klien.
+- Draf (`status = 'draft'`) tidak pernah dikembalikan oleh endpoint publik. Uji regresi di `functions/content-authz.test.ts` memverifikasi filter `status = 'published' AND deleted_at IS NULL`.
+
+### 6.2 Unggahan Gambar & PDF
+- Klien tidak pernah memegang `CLOUDINARY_API_SECRET`. Server membuat tanda tangan unggah (`POST /api/admin/uploads/signature`) dengan `public_id` acak (`crypto.randomUUID()`) dan folder tertutup (`kappama/programs|albums|leaders|org|bylaws`).
+- Validasi ganda: klien memeriksa tipe/ukuran sebelum mengirim, server memvalidasi ulang `contentType` dan `bytes` (gambar JPG/PNG/WebP ≤ 5 MB, PDF ≤ 10 MB). Tipe di luar daftar → `422 VALIDATION_ERROR`.
+- `allowed_formats` ikut ditandatangani sehingga Cloudinary menolak ekstensi lain meskipun permintaan dimanipulasi.
+- Nama berkas asli tidak dipakai; URL publik hanya memuat `public_id` acak sehingga tidak membocorkan nama pengunggah atau nama kegiatan internal.
+- Aset dihapus saat entri dihapus (foto program/album, foto pengurus, logo, PDF AD/ART). Path statis `/docs/...` dan URL eksternal (mis. Google Drive) dilewati karena bukan milik penyimpanan.
+
+### 6.3 Cadangan Dokumen AD/ART
+Cloudinary free dapat menolak **delivery** PDF (kebijakan akun). Bila itu terjadi:
+1. Unggah PDF ke Google Drive dengan izin "siapa saja yang memiliki tautan", lalu tempel tautan pada kolom "Atau tautan dokumen".
+2. Atau letakkan berkas di `public/docs/` repositori, lalu isi `/docs/nama-berkas.pdf` (contoh tersedia: `/docs/ad-art-kappama-sample.pdf`).
+
+Kedua jalur tidak menambah layanan berbayar dan tetap ditampilkan pada halaman publik `/ad-art`.

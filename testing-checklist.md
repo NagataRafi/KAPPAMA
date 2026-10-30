@@ -132,3 +132,42 @@ Status terakhir: `5 berkas uji, 57 test lulus`.
 - [x] **Pendaftaran (`/daftar`):** Ringkasan syarat 12 kecamatan Pacitan, alur 3 langkah, tombol pendaftaran Google.
 - [x] **Kebijakan Privasi & Syarat Penggunaan:** Kepatuhan UU PDP No. 27/2022, ditandai draf menunggu tinjauan pengurus.
 - [x] **Halaman 404:** Tampilan error route ramah pengguna dengan tombol kembali ke beranda.
+
+---
+
+## 7. Verifikasi Panel Konten (Fase 4A)
+
+### 7.1 Otorisasi & Peran
+- [ ] Anonim membuka `/admin`, `/admin/program-kerja`, `/admin/galeri`: diarahkan ke login; panggilan API `/api/admin/content/*` dan `/api/admin/uploads/signature` membalas `401`.
+- [ ] Login sebagai `member` membuka `/admin`: halaman penolakan akses tampil, menu admin tidak dirender, dan API membalas `403 FORBIDDEN`.
+- [ ] Login sebagai `content_admin`: sidebar menampilkan Dashboard, Persetujuan, Program Kerja, Galeri, Profil Organisasi, Struktur, AD/ART.
+- [ ] Login sebagai `super_admin`: seluruh menu tampil dan semua endpoint konten dapat dipakai.
+- [ ] Draf program/album tidak muncul di `/program-kerja`, `/galeri`, beranda, maupun `/api/public/*`; membuka slug draf langsung membalas `404`.
+- [ ] Setiap kali menyimpan/menghapus/menerbitkan konten, baris baru `audit_logs` bertindak `CONTENT_*` muncul tanpa judul/deskripsi lengkap di metadata.
+
+### 7.2 Profil, Struktur, AD/ART
+- [ ] Ubah Tentang/Visi/Misi, simpan, lalu muat ulang `/profil` dan `/profil/visi-misi`: teks baru tampil, misi tampil berurutan.
+- [ ] Tambah periode baru, isi 4 jabatan inti, tandai aktif, lalu pilih periode pada `/profil/struktur`: data berpindah sesuai periode.
+- [ ] Hapus pengurus dengan foto: baris hilang dari daftar admin dan foto hilang dari Cloudinary.
+- [ ] Unggah PDF AD/ART ≤ 10 MB: berkas muncul di `/profil/ad-art` dan dapat diunduh. Berkas > 10 MB atau bukan PDF ditolak dengan pesan ramah.
+- [ ] Jika Cloudinary menolak PDF: isi kolom tautan Google Drive atau `/docs/ad-art-kappama-sample.pdf`, simpan, lalu pastikan tautan terbuka dari halaman publik.
+
+### 7.3 Program Kerja & Galeri
+- [ ] Buat program baru: isi judul, slug, tahun, ringkasan, deskripsi, unggah sampul; simpan sebagai draf dan pastikan belum tampil di publik.
+- [ ] Unggah beberapa foto sekaligus (batas 30/program, 60/album): progres unggah tampil, foto masuk berurutan, kaption dapat diubah, dan urutan dapat disimpan.
+- [ ] Tambah video YouTube dengan URL `watch`, `youtu.be`, dan `embed`: hanya ID yang disimpan, iframe di halaman detail memakai `youtube-nocookie.com`.
+- [ ] Coba unggah foto ke-31 (program) atau ke-61 (album): ditolak dengan kode `MEDIA_LIMIT`.
+- [ ] Terbitkan program/album: muncul di halaman publik dan filter tahun/universitas. Kembalikan ke draf: hilang dari publik.
+- [ ] Hapus program/album: hilang dari panel dan publik, seluruh foto beserta sampul terhapus dari penyimpanan.
+
+### 7.4 Validasi Unggahan
+- [ ] Unggah `.txt` yang diubah menjadi `.jpg`: ditolak server (`422 VALIDATION_ERROR`), bukan hanya oleh klien.
+- [ ] Unggah gambar > 5 MB: ditolak dengan pesan ukuran maksimal.
+- [ ] Unggah PDF pada AD/ART > 10 MB atau bertipe lain: ditolak `422`.
+- [ ] Tanpa kredensial Cloudinary: panel menampilkan pesan penyimpanan belum dikonfigurasi (`503 STORAGE_NOT_CONFIGURED`) dan menawarkan kolom tautan cadangan.
+
+### 7.5 UI & Aksesibilitas
+- [ ] Semua formulir memiliki label, pesan galat terbaca pembaca layar, dan fokus terlihat jelas.
+- [ ] Tombol hapus selalu memunculkan dialog konfirmasi sebelum eksekusi.
+- [ ] Halaman admin duiji pada 360px dan desktop: sidebar dapat dibuka/tutup di mobile, tidak ada horizontal scroll.
+- [ ] State loading (skeleton), kosong, galat, dan toast sukses tampil pada setiap halaman admin.

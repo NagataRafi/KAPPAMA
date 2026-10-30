@@ -82,6 +82,24 @@ Semua baris dummy ditandai `users.clerk_user_id` berawalan `user_dummy_`; hapus 
 
 ---
 
+## 🔐 Panel Admin Konten (`/admin`)
+
+Hanya untuk peran `content_admin` dan `super_admin` (diperiksa di server dari tabel `users`). Rute tersedia:
+
+| Rute | Fungsi |
+|---|---|
+| `/admin` | Dashboard ringkasan (pendaftar menunggu, jumlah konten) |
+| `/admin/persetujuan` | Antrean persetujuan anggota |
+| `/admin/program-kerja` · `/admin/program-kerja/:id` | CRUD program kerja, banyak foto, sematan YouTube |
+| `/admin/galeri` · `/admin/galeri/:id` | CRUD album, banyak foto, sematan YouTube |
+| `/admin/profil-organisasi` | Tentang, Visi, Misi, kontak, logo |
+| `/admin/struktur` | Periode kepengurusan dan 4 jabatan inti |
+| `/admin/ad-art` | Unggah PDF AD/ART, status aktif, tautan cadangan |
+
+Unggahan memakai signed upload Cloudinary (`POST /api/admin/uploads/signature`); server memvalidasi tipe dan ukuran (gambar JPG/PNG/WebP ≤ 5 MB, PDF ≤ 10 MB) dan tidak pernah mengirim `CLOUDINARY_API_SECRET` ke browser. Draf tidak tampil di halaman publik. Bila Cloudinary belum dikonfigurasi, unggahan membalas `503 STORAGE_NOT_CONFIGURED`; AD/ART masih dapat memakai tautan Google Drive atau berkas `public/docs/`.
+
+---
+
 ## 📚 Dokumentasi Proyek
 Seluruh dokumentasi rinci tersedia di berkas `.md` root repositori:
 - [PRD.md](PRD.md): Dokumen Persyaratan Produk utama (Single Source of Truth).

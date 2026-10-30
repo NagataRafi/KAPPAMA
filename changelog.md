@@ -5,6 +5,31 @@ Format ini mengacu pada [Keep a Changelog](https://keepachangelog.com/id/1.1.0/)
 
 ---
 
+## [0.5.0] - 2026-10-30
+
+### Ditambahkan
+- **Panel admin konten (Fase 4A)** di bawah `/admin` dengan `AdminLayout`: sidebar navy `#0F1E36` + aksen emas `#D97706`, menu sesuai peran, breadcrumb, dan dashboard ringkasan (pendaftar menunggu, jumlah konten terbit/draf). Peran `content_admin` dan `super_admin` diperiksa di server; UI hanya menyembunyikan menu.
+- **Profil organisasi**: formulir Tentang, Visi, Misi (satu poin per baris), kontak sekretariat, dan logo.
+- **Struktur organisasi**: CRUD periode (label, tahun mulai/selesai, aktif) dan pengurus (pembina, penasihat, ketua, wakil ketua umum) dengan foto.
+- **AD/ART**: unggah PDF maks 10 MB, status aktif tunggal, riwayat versi, serta opsi cadangan tautan Google Drive atau berkas statis `/docs/...`.
+- **Program kerja**: CRUD lengkap (judul, slug unik, tahun, tanggal, lokasi, ringkasan, deskripsi, tujuan, sasaran, PIC, universitas), status draf/terbit, sampul, hingga 30 foto (urutan + kaption) dan sematan YouTube.
+- **Galeri**: CRUD album (terhubung opsional ke program kerja), status draf/terbit, sampul, hingga 60 foto dan video YouTube.
+- **Signed upload Cloudinary** (`POST /api/admin/uploads/signature`): `public_id` acak di server, folder tertutup, `allowed_formats` ikut ditandatangani, validasi tipe/ukuran di server (JPG/PNG/WebP ≤ 5 MB, PDF ≤ 10 MB). Klien mengompres gambar ke WebP, menampilkan progres unggah, dan tidak pernah memegang API secret.
+- **Endpoint publik konten** `/api/public/org`, `/leaders`, `/bylaws`, `/programs`, `/programs/:slug`, `/albums`, `/albums/:slug`, `/stats` yang hanya mengembalikan konten `published` dan belum dihapus.
+- **Halaman publik kini memakai data nyata** (beranda, profil, visi-misi, struktur, AD/ART, program kerja, galeri) dengan state loading skeleton, kosong, galat + tombol coba lagi.
+- Utilitas `shared/utils/youtube.ts` dan skema Zod `shared/schema/content-schema.ts` (`stripHtmlTags`), dipakai bersama klien dan server.
+- Test `functions/content-authz.test.ts` (14 kasus): `401` anonim, `403` member, akses admin konten, validasi tipe/ukuran unggahan, `503` penyimpanan belum dikonfigurasi, signature gambar/PDF, serta filter draf pada endpoint publik.
+
+### Diubah
+- `StorageService` menerima `resourceType` (`image`/`raw`/`auto`), `allowedFormats`, dan `deleteImage(publicId, resourceType)` untuk mendukung PDF dan penghapusan aset.
+- Konten disimpan sebagai teks biasa; tag HTML dibuang di server dan dirender sebagai teks React, sehingga tidak ada jalur XSS. Video hanya disimpan sebagai ID YouTube 11 karakter.
+- `functions/[[path]].ts` mengekspos `resolveConfig().cloudinary.apiKey/apiSecret` khusus server; versi health menjadi `0.5.0`.
+
+### Dokumen
+- `api-spec.md` (bagian 4.3–4.5), `security-privacy.md` (model XSS teks biasa, audit `CONTENT_*`, kontrol unggahan, cadangan PDF), `testing-checklist.md` (bagian 7), `roadmap.md`, dan `changelog.md` diperbarui. Tidak ada migrasi database baru: seluruh tabel Fase 4A sudah ada pada `db/schema.ts` dan migrasi `0000`–`0002`.
+
+---
+
 ## [Unreleased]
 ### Direncanakan
 - Fase 4: Panel Admin & Manajemen Organisasi (CRUD konten, statistik, ekspor data).

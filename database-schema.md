@@ -373,3 +373,22 @@ Cakupan dan batasan:
 - **PDDikti belum bisa dicocokkan**: `https://api-pddikti.kemdiktisaintek.go.id/api/pt/prodi/005023` membalas `401`, dan situs `pddikti.kemdiktisaintek.go.id` berbasis JavaScript sehingga daftarnya tidak terbaca. Kode PT Polinema: `005023`. Pencocokan PDDikti perlu diulang saat akses tersedia.
 - Kampus lain masih memakai daftar prodi populer + "Lainnya" (belum katalog lengkap).
 
+
+---
+
+## Catatan Fase 4A — Tanpa Migrasi Baru
+
+Panel konten Fase 4A **tidak menambah migrasi**. Seluruh tabel dan kolom yang dipakai sudah ada pada `db/schema.ts` dan telah diterapkan oleh migrasi `0000_slow_karen_page.sql`, `0001_dedupe_master_data.sql`, dan `0002_study_program_degree_unique.sql`:
+
+- `org_profile` (tentang, visi, misi, kontak, logo)
+- `org_periods`, `org_leaders`
+- `bylaws_documents`
+- `programs`, `program_media`
+- `albums`, `album_media`
+- `audit_logs` (aksi `CONTENT_*`)
+
+Aturan yang berlaku pada tabel tersebut tanpa perubahan skema:
+1. **Soft delete** memakai `deleted_at` untuk `programs`, `program_media`, `albums`, `album_media`, `org_leaders`. Kueri publik dan admin selalu menyaring `deleted_at IS NULL`.
+2. **Status konten** memakai `status` bertipe teks dengan nilai `draft` atau `published`; hanya `published` yang dikembalikan endpoint publik.
+3. **Slug unik** dijaga indeks unik yang sudah ada; server memeriksa lebih dulu dan membalas `409 SLUG_TAKEN`.
+4. **Kunci media** (`cover_key`, `photo_key`, `file_key`, `logo_key`) menyimpan `public_id` Cloudinary, URL absolut (mis. Google Drive), atau path statis `/docs/...`. Tidak ada kolom baru.

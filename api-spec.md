@@ -216,13 +216,45 @@ Catatan: bila `DATABASE_URL` kosong atau query gagal, kelima endpoint tetap memb
 - **`POST /api/admin/members/:id/restore`**: Mengaktifkan kembali anggota `suspended`; mencatat audit `MEMBER_RESTORED`.
 - **Akses:** `content_admin`, `super_admin`.
 
-### 4.3 CRUD Konten (Proker, Galeri, Profil, AD/ART)
-- `POST/PUT/DELETE /api/admin/programs`
-- `POST/PUT/DELETE /api/admin/albums`
-- `PUT /api/admin/org/profile`
-- `POST/PUT/DELETE /api/admin/leaders`
-- `POST /api/admin/bylaws/upload` (Unggah dokumen PDF AD/ART; disiapkan opsi cadangan berkas statis `public/` atau Google Drive)
-- `POST /api/admin/uploads/signature` (Membuat signature unggah aman Cloudinary untuk direct upload dari klien, menghasilkan `public_id` yang disimpan ke kolom `*_key`)
+### 4.3 CRUD Konten (Program Kerja, Galeri, Profil, Struktur, AD/ART)
+Semua endpoint di bawah ini wajib sesi Clerk dengan peran `content_admin` atau `super_admin` (diperiksa dari tabel `users`, bukan metadata klien). Tanpa sesi `401`; peran lain `403 FORBIDDEN`. Setiap perubahan menulis entri `audit_logs` (`CONTENT_*`) dengan aktor, aksi, entitas, ID entitas, dan metadata minimal tanpa data pribadi.
+
+- **Profil organisasi**
+  - `GET /api/admin/content/org` — satu baris `org_profile`.
+  - `PUT /api/admin/content/org` — body `{ aboutText, visionText, missions[], contactEmail, contactInstagram, contactAddress, logoKey }` (Zod `orgProfileInputSchema`). Aksi audit: `CONTENT_ORG_UPDATED`.
+- **Periode & pengurus**
+  - `GET|POST /api/admin/content/periods`, `PUT|DELETE /api/admin/content/periods/:id`, `POST /api/admin/content/periods/:id/activate`.
+  - `GET /api/admin/content/leaders?periodId=`, `POST /api/admin/content/leaders`, `PUT|DELETE /api/admin/content/leaders/:id`.
+  - Menghapus periode menghapus pengurusnya (cascade) dan foto Cloudinary terkait.
+- **AD/ART**
+  - `GET|POST /api/admin/content/bylaws`, `PUT|DELETE /api/admin/content/bylaws/:id`.
+  - `fileKey` menerima `public_id` Cloudinary, URL absolut (Google Drive), atau path statis `/docs/...`. Hanya satu dokumen `isActive` pada satu waktu.
+- **Program kerja**
+  - `GET /api/admin/content/programs` (termasuk draf), `GET|PUT|DELETE /api/admin/content/programs/:id`, `POST /api/admin/content/programs`, `POST /api/admin/content/programs/:id/status` (`{ status: "draft" | "published" }`).
+  - Media: `POST /api/admin/content/programs/:id/media` (`mediaType: "image" | "youtube"`, `fileKey` atau `youtubeUrl`), `PUT|DELETE /api/admin/content/program-media/:id`.
+  - Batas 30 foto per program. Hapus = soft delete (`deleted_at`) + aset Cloudinary dihapus.
+- **Galeri**
+  - `GET /api/admin/content/albums`, `GET|PUT|DELETE /api/admin/content/albums/:id`, `POST /api/admin/content/albums`, `POST /api/admin/content/albums/:id/status`.
+  - Media: `POST /api/admin/content/albums/:id/media`, `PUT|DELETE /api/admin/content/album-media/:id`. Batas 60 foto per album.
+
+### 4.4 Unggah Berkas (Signed Upload)
+- **`POST /api/admin/uploads/signature`** — body `{ kind: "program"|"album"|"leader"|"org"|"bylaws", contentType, bytes }`.
+  - Validasi server: gambar hanya `image/jpeg`, `image/png`, `image/webp` maks 5 MB; AD/ART hanya `application/pdf` maks 10 MB. Gagal → `422 VALIDATION_ERROR`.
+  - `public_id` dibuat acak di server (`crypto.randomUUID()`), folder dibatasi (`kappama/programs`, `kappama/albums`, `kappama/leaders`, `kappama/org`, `kappama/bylaws`), `allowed_formats` ikut ditandatangani.
+  - Cloudinary belum dikonfigurasi → `503 STORAGE_NOT_CONFIGURED` (UI menampilkan opsi tautan cadangan).
+  - Klien mengunggah langsung ke Cloudinary; `CLOUDINARY_API_SECRET` tidak pernah dikirim ke browser.
+
+### 4.5 Konten Publik (`/api/public/*`, tanpa sesi)
+- `GET /api/public/org` — profil organisasi terbaru atau `data: null`.
+- `GET /api/public/leaders?period=` — daftar periode + pengurus periode terpilih (default periode aktif).
+- `GET /api/public/bylaws` — `{ current, history }`.
+- `GET /api/public/programs?year=&search=` — hanya `status = 'published' AND deleted_at IS NULL`.
+- `GET /api/public/programs/:slug` — detail + media (foto & video YouTube); draf → `404 NOT_FOUND`.
+- `GET /api/public/albums`, `GET /api/public/albums/:slug` — hanya album terbit.
+- `GET /api/public/stats` — jumlah anggota aktif, alumni, program terbit, kampus aktif.
+
+Catatan keamanan konten: seluruh teks disimpan sebagai **teks biasa**. Tag HTML dibuang di server (`stripHtmlTags`) dan klien merender sebagai teks React, sehingga tidak ada jalur XSS. YouTube hanya disimpan sebagai ID video 11 karakter hasil ekstraksi server.
+
 
 ---
 
