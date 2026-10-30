@@ -1,29 +1,85 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { Calendar, MapPin, User, ArrowLeft, Target, Video, Image } from 'lucide-react';
-import { dummyPrograms } from '../../data/dummy-content';
+import { Calendar, MapPin, User, ArrowLeft, Target, Video, Image, AlertCircle } from 'lucide-react';
+import { getPublicProgram, type PublicProgram } from '../../services/content-api';
+import { ApiError } from '../../services/api';
+import { LoadingSkeleton } from '../../components/common/LoadingSkeleton';
 
 export function ProgramKerjaDetailPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
+  const [program, setProgram] = useState<PublicProgram | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<{ message: string; notFound: boolean } | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
 
-  const program = dummyPrograms.find((p) => p.slug === slug);
+  const load = useCallback(async () => {
+    if (!slug) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await getPublicProgram(slug);
+      setProgram(res.data);
+    } catch (err) {
+      const notFound = err instanceof ApiError && err.status === 404;
+      setError({
+        message: notFound
+          ? 'Program kerja dengan alamat tersebut tidak tersedia atau telah diarsipkan.'
+          : err instanceof Error
+            ? err.message
+            : 'Gagal memuat program kerja.',
+        notFound,
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [slug]);
 
-  if (!program) {
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (loading) {
     return (
-      <div className="container mx-auto max-w-xl py-20 px-4 text-center">
-        <h2 className="text-2xl font-bold text-[#0F1E36] mb-3">Program Kerja Tidak Ditemukan</h2>
-        <p className="text-sm text-slate-500 mb-6">Program kerja dengan alamat tersebut tidak tersedia atau telah diarsipkan.</p>
-        <Link
-          to="/program-kerja"
-          className="px-6 py-2.5 rounded-xl bg-[#0F1E36] text-white font-bold text-sm"
-        >
-          Kembali ke Daftar Program
-        </Link>
+      <div className="container mx-auto max-w-4xl py-16 px-4">
+        <LoadingSkeleton type="text" count={3} />
       </div>
     );
   }
+
+  if (error || !program) {
+    return (
+      <div className="container mx-auto max-w-xl py-20 px-4 text-center space-y-4">
+        <h2 className="text-2xl font-bold text-[#0F1E36]">
+          {error?.notFound ? 'Program Kerja Tidak Ditemukan' : 'Gagal Memuat Program Kerja'}
+        </h2>
+        <p className="text-sm text-slate-500">{error?.message}</p>
+        <div className="flex items-center justify-center gap-2">
+          {!error?.notFound && (
+            <button
+              onClick={load}
+              className="px-5 py-2.5 rounded-xl bg-[#D97706] text-white font-bold text-sm inline-flex items-center gap-1.5"
+            >
+              <AlertCircle className="w-4 h-4" aria-hidden="true" /> Coba Lagi
+            </button>
+          )}
+          <Link to="/program-kerja" className="px-6 py-2.5 rounded-xl bg-[#0F1E36] text-white font-bold text-sm">
+            Kembali ke Daftar Program
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const photos = (program.media ?? []).filter((item) => item.mediaType === 'image' && item.url);
+  const videos = (program.media ?? []).filter((item) => item.mediaType === 'youtube' && item.youtubeId);
+  const objectives = (program.objectives ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const formattedDate = program.eventDate
+    ? new Date(program.eventDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+    : null;
 
   return (
     <div className="flex flex-col w-full py-12 px-4">
@@ -58,54 +114,58 @@ export function ProgramKerjaDetailPage() {
 
           {/* Meta Informasi */}
           <div className="flex flex-wrap items-center gap-6 text-xs sm:text-sm text-slate-500 pt-2 border-t border-slate-200">
-            <span className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-[#D97706]" />
-              {program.eventDate}
-            </span>
-            <span className="flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-[#D97706]" />
-              {program.location}
-            </span>
-            <span className="flex items-center gap-2">
-              <User className="w-4 h-4 text-[#D97706]" />
-              PIC: {program.picName}
-            </span>
+            {formattedDate && (
+              <span className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-[#D97706]" />
+                {formattedDate}
+              </span>
+            )}
+            {program.location && (
+              <span className="flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-[#D97706]" />
+                {program.location}
+              </span>
+            )}
+            {program.picName && (
+              <span className="flex items-center gap-2">
+                <User className="w-4 h-4 text-[#D97706]" />
+                PIC: {program.picName}
+              </span>
+            )}
           </div>
         </div>
 
         {/* Gambar Sampul Utama */}
-        <div className="rounded-3xl overflow-hidden shadow-lg border border-slate-100 max-h-[450px] bg-slate-900">
-          <img
-            src={program.coverImage}
-            alt={program.title}
-            className="w-full h-full object-cover"
-          />
-        </div>
+        {program.coverUrl && (
+          <div className="rounded-3xl overflow-hidden shadow-lg border border-slate-100 max-h-[450px] bg-slate-900">
+            <img src={program.coverUrl} alt={program.title} className="w-full h-full object-cover" />
+          </div>
+        )}
 
         {/* Ringkasan & Deskripsi */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div className="md:col-span-2 space-y-8">
             <section className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-100 shadow-sm space-y-4">
               <h2 className="text-xl font-bold text-[#0F1E36]">Deskripsi Lengkap</h2>
-              <p className="text-sm sm:text-base text-slate-700 leading-relaxed">
+              <p className="text-sm sm:text-base text-slate-700 leading-relaxed whitespace-pre-line">
                 {program.description}
               </p>
             </section>
 
             {/* Tujuan Program */}
-            {program.objectives && program.objectives.length > 0 && (
+            {objectives.length > 0 && (
               <section className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-100 shadow-sm space-y-4">
                 <div className="flex items-center gap-2 text-[#0F1E36]">
                   <Target className="w-5 h-5 text-[#D97706]" />
                   <h2 className="text-xl font-bold">Tujuan Program</h2>
                 </div>
                 <ul className="space-y-2.5">
-                  {program.objectives.map((obj, i) => (
-                    <li key={i} className="flex items-start gap-3 text-sm text-slate-700">
+                  {objectives.map((objective, index) => (
+                    <li key={index} className="flex items-start gap-3 text-sm text-slate-700">
                       <span className="w-5 h-5 rounded-full bg-amber-100 text-[#D97706] flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
-                        {i + 1}
+                        {index + 1}
                       </span>
-                      <span>{obj}</span>
+                      <span>{objective}</span>
                     </li>
                   ))}
                 </ul>
@@ -113,45 +173,49 @@ export function ProgramKerjaDetailPage() {
             )}
 
             {/* Dokumentasi Foto Program */}
-            {program.photos && program.photos.length > 0 && (
+            {photos.length > 0 && (
               <section className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-100 shadow-sm space-y-4">
                 <div className="flex items-center gap-2 text-[#0F1E36]">
                   <Image className="w-5 h-5 text-[#D97706]" />
                   <h2 className="text-xl font-bold">Galeri Dokumentasi Foto</h2>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  {program.photos.map((photo, i) => (
-                    <div
-                      key={i}
-                      onClick={() => setSelectedPhoto(photo.url)}
+                  {photos.map((photo) => (
+                    <button
+                      type="button"
+                      key={photo.id}
+                      onClick={() => setSelectedPhoto(photo.url ?? null)}
                       className="group cursor-pointer rounded-xl overflow-hidden aspect-video bg-slate-100 relative shadow-sm"
                     >
                       <img
-                        src={photo.url}
-                        alt={photo.caption}
+                        src={photo.url ?? ''}
+                        alt={photo.caption ?? program.title}
+                        loading="lazy"
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       />
                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2.5">
                         <span className="text-white text-xs truncate">{photo.caption}</span>
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               </section>
             )}
 
             {/* Sematan Video YouTube */}
-            {program.youtubeId && (
-              <section className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-100 shadow-sm space-y-4">
+            {videos.map((video) => (
+              <section
+                key={video.id}
+                className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-100 shadow-sm space-y-4"
+              >
                 <div className="flex items-center gap-2 text-[#0F1E36]">
                   <Video className="w-5 h-5 text-[#D97706]" />
-                  <h2 className="text-xl font-bold">Video Dokumentasi</h2>
+                  <h2 className="text-xl font-bold">{video.caption || 'Video Dokumentasi'}</h2>
                 </div>
                 <div className="rounded-2xl overflow-hidden aspect-video bg-black shadow-inner">
-                  {/* YouTube nocookie embed with lazy loading */}
                   <iframe
-                    src={`https://www.youtube-nocookie.com/embed/${program.youtubeId}`}
-                    title={program.title}
+                    src={`https://www.youtube-nocookie.com/embed/${video.youtubeId}`}
+                    title={video.caption || program.title}
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                     allowFullScreen
                     loading="lazy"
@@ -159,7 +223,7 @@ export function ProgramKerjaDetailPage() {
                   />
                 </div>
               </section>
-            )}
+            ))}
           </div>
 
           {/* Kolom Samping (Sasaran & Info Ringkas) */}
@@ -169,22 +233,30 @@ export function ProgramKerjaDetailPage() {
                 Informasi Pelaksanaan
               </h3>
               <div className="space-y-3 text-xs sm:text-sm">
-                <div>
-                  <span className="text-slate-400 block mb-0.5">Sasaran Peserta:</span>
-                  <span className="font-medium text-slate-800">{program.targets}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block mb-0.5">Penanggung Jawab:</span>
-                  <span className="font-medium text-slate-800">{program.picName}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block mb-0.5">Waktu:</span>
-                  <span className="font-medium text-slate-800">{program.eventDate}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block mb-0.5">Lokasi:</span>
-                  <span className="font-medium text-slate-800">{program.location}</span>
-                </div>
+                {program.targets && (
+                  <div>
+                    <span className="text-slate-400 block mb-0.5">Sasaran Peserta:</span>
+                    <span className="font-medium text-slate-800">{program.targets}</span>
+                  </div>
+                )}
+                {program.picName && (
+                  <div>
+                    <span className="text-slate-400 block mb-0.5">Penanggung Jawab:</span>
+                    <span className="font-medium text-slate-800">{program.picName}</span>
+                  </div>
+                )}
+                {formattedDate && (
+                  <div>
+                    <span className="text-slate-400 block mb-0.5">Waktu:</span>
+                    <span className="font-medium text-slate-800">{formattedDate}</span>
+                  </div>
+                )}
+                {program.location && (
+                  <div>
+                    <span className="text-slate-400 block mb-0.5">Lokasi:</span>
+                    <span className="font-medium text-slate-800">{program.location}</span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -207,7 +279,7 @@ export function ProgramKerjaDetailPage() {
         {selectedPhoto && (
           <div
             onClick={() => setSelectedPhoto(null)}
-            className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in"
+            className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 backdrop-blur-sm"
           >
             <div className="relative max-w-4xl w-full max-h-[90vh] flex items-center justify-center">
               <img
@@ -217,6 +289,7 @@ export function ProgramKerjaDetailPage() {
               />
               <button
                 onClick={() => setSelectedPhoto(null)}
+                aria-label="Tutup pratinjau foto"
                 className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 text-white hover:bg-white/40 flex items-center justify-center text-lg font-bold"
               >
                 ✕

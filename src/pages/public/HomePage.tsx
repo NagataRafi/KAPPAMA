@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   HeartHandshake,
@@ -9,12 +10,46 @@ import {
   Sparkles,
   GraduationCap,
 } from 'lucide-react';
-import { dummyPrograms, dummyAlbums, dummyOrgProfile } from '../../data/dummy-content';
+import {
+  getPublicAlbums,
+  getPublicOrg,
+  getPublicPrograms,
+  getPublicStats,
+  type PublicAlbum,
+  type PublicOrgProfile,
+  type PublicProgram,
+} from '../../services/content-api';
 import { BatikOrnament } from '../../components/common/BatikOrnament';
 
+const FALLBACK_ABOUT =
+  'Keluarga Pelajar Pacitan di Malang (KAPPAMA) adalah wadah persaudaraan pelajar dan mahasiswa asal Kabupaten Pacitan yang menempuh pendidikan di Kota Malang.';
+
 export function HomePage() {
-  const featuredPrograms = dummyPrograms.slice(0, 3);
-  const latestAlbum = dummyAlbums[0];
+  const [org, setOrg] = useState<PublicOrgProfile | null>(null);
+  const [programs, setPrograms] = useState<PublicProgram[]>([]);
+  const [albums, setAlbums] = useState<PublicAlbum[]>([]);
+  const [stats, setStats] = useState({ activeMembers: 0, alumni: 0, programs: 0, universities: 0 });
+
+  const load = useCallback(async () => {
+    const [orgResult, programResult, albumResult, statsResult] = await Promise.allSettled([
+      getPublicOrg(),
+      getPublicPrograms(),
+      getPublicAlbums(),
+      getPublicStats(),
+    ]);
+    if (orgResult.status === 'fulfilled') setOrg(orgResult.value.data);
+    if (programResult.status === 'fulfilled') setPrograms(programResult.value.data);
+    if (albumResult.status === 'fulfilled') setAlbums(albumResult.value.data);
+    if (statsResult.status === 'fulfilled') setStats(statsResult.value.data);
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const featuredPrograms = programs.slice(0, 3);
+  const latestAlbum = albums[0];
+
 
   return (
     <div className="flex flex-col w-full">
@@ -37,7 +72,7 @@ export function HomePage() {
           </h1>
 
           <p className="text-lg sm:text-xl text-slate-200 max-w-3xl mx-auto mb-10 leading-relaxed font-normal">
-            {dummyOrgProfile.aboutText}
+            {org?.aboutText || FALLBACK_ABOUT}
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -70,13 +105,13 @@ export function HomePage() {
             </Link>
             <Link to="/program-kerja" className="p-3 pt-6 sm:pt-3 group hover:bg-slate-50 rounded-xl transition-colors">
               <span className="block text-2xl sm:text-3xl font-extrabold text-[#0F1E36] group-hover:text-[#D97706] transition-colors">
-                10+
+                {stats.programs}
               </span>
-              <span className="text-xs font-semibold text-slate-500 mt-1 block">Program Kerja Unggulan</span>
+              <span className="text-xs font-semibold text-slate-500 mt-1 block">Program Kerja Terbit</span>
             </Link>
             <Link to="/profil/struktur" className="p-3 pt-6 sm:pt-3 group hover:bg-slate-50 rounded-xl transition-colors">
               <span className="block text-2xl sm:text-3xl font-extrabold text-[#0F1E36] group-hover:text-[#D97706] transition-colors">
-                13+
+                {stats.universities}
               </span>
               <span className="text-xs font-semibold text-slate-500 mt-1 block">Kampus Mitra Malang</span>
             </Link>
@@ -171,18 +206,29 @@ export function HomePage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {featuredPrograms.map((proker) => (
+            {featuredPrograms.length === 0 ? (
+              <p className="text-sm text-slate-500 md:col-span-3">
+                Belum ada program kerja terbit. Pengurus akan memperbarui daftar kegiatan.
+              </p>
+            ) : (
+              featuredPrograms.map((proker) => (
               <article
                 key={proker.id}
                 className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 border border-slate-100 flex flex-col group"
               >
                 <div className="relative h-48 overflow-hidden bg-slate-200">
-                  <img
-                    src={proker.coverImage}
-                    alt={proker.title}
-                    loading="lazy"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  />
+                  {proker.coverUrl ? (
+                    <img
+                      src={proker.coverUrl}
+                      alt={proker.title}
+                      loading="lazy"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs font-semibold">
+                      Tanpa Sampul
+                    </div>
+                  )}
                   <div className="absolute top-3 left-3 bg-[#0F1E36]/90 backdrop-blur-md text-white text-xs font-bold px-3 py-1 rounded-full">
                     {proker.year}
                   </div>
@@ -196,10 +242,16 @@ export function HomePage() {
                 <div className="p-6 flex-1 flex flex-col justify-between space-y-4">
                   <div>
                     <div className="flex items-center gap-3 text-xs text-slate-500 mb-2">
-                      <span className="flex items-center gap-1">
-                        <Calendar className="w-3.5 h-3.5" />
-                        {proker.eventDate}
-                      </span>
+                      {proker.eventDate && (
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3.5 h-3.5" />
+                          {new Date(proker.eventDate).toLocaleDateString('id-ID', {
+                            day: 'numeric',
+                            month: 'long',
+                            year: 'numeric',
+                          })}
+                        </span>
+                      )}
                     </div>
                     <h3 className="font-bold text-base text-[#0F1E36] group-hover:text-[#D97706] transition-colors line-clamp-2">
                       {proker.title}
@@ -218,7 +270,8 @@ export function HomePage() {
                   </Link>
                 </div>
               </article>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </section>
@@ -270,24 +323,38 @@ export function HomePage() {
 
             {/* Cuplikan Album Pilihan */}
             <div className="relative">
-              <div className="relative rounded-3xl overflow-hidden shadow-2xl border-4 border-white bg-slate-900 group">
-                <img
-                  src={latestAlbum.coverImage}
-                  alt={latestAlbum.title}
-                  className="w-full h-80 sm:h-96 object-cover opacity-90 group-hover:scale-105 transition-transform duration-500"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#0F1E36] via-[#0F1E36]/30 to-transparent flex flex-col justify-end p-6 sm:p-8">
-                  <span className="text-amber-400 font-bold text-xs uppercase tracking-wider mb-1">
-                    Album Sorotan · {latestAlbum.year}
-                  </span>
-                  <h3 className="text-xl sm:text-2xl font-bold text-white mb-2 leading-snug">
-                    {latestAlbum.title}
-                  </h3>
-                  <p className="text-xs sm:text-sm text-slate-300 line-clamp-2">
-                    {latestAlbum.description}
-                  </p>
+              {latestAlbum ? (
+                <Link to={`/galeri/${latestAlbum.slug}`} className="block">
+                  <div className="relative rounded-3xl overflow-hidden shadow-2xl border-4 border-white bg-slate-900 group">
+                    {latestAlbum.coverUrl ? (
+                      <img
+                        src={latestAlbum.coverUrl}
+                        alt={latestAlbum.title}
+                        className="w-full h-80 sm:h-96 object-cover opacity-90 group-hover:scale-105 transition-transform duration-500"
+                      />
+                    ) : (
+                      <div className="w-full h-80 sm:h-96 bg-slate-800" />
+                    )}
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#0F1E36] via-[#0F1E36]/30 to-transparent flex flex-col justify-end p-6 sm:p-8">
+                      <span className="text-amber-400 font-bold text-xs uppercase tracking-wider mb-1">
+                        Album Sorotan · {latestAlbum.year}
+                      </span>
+                      <h3 className="text-xl sm:text-2xl font-bold text-white mb-2 leading-snug">
+                        {latestAlbum.title}
+                      </h3>
+                      {latestAlbum.description && (
+                        <p className="text-xs sm:text-sm text-slate-300 line-clamp-2">
+                          {latestAlbum.description}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </Link>
+              ) : (
+                <div className="rounded-3xl border-4 border-white bg-slate-50 h-80 sm:h-96 flex items-center justify-center text-sm text-slate-500 shadow-xl">
+                  Album dokumentasi belum tersedia.
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </div>
