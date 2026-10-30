@@ -21,6 +21,15 @@ import { DirektoriPage } from './pages/members/DirektoriPage';
 import { MemberDetailPage } from './pages/members/MemberDetailPage';
 import { ProfilSayaPage } from './pages/members/ProfilSayaPage';
 import { ApprovalsPage } from './pages/admin/ApprovalsPage';
+import { AdminLayout } from './components/admin/AdminLayout';
+import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
+import { ProfilOrganisasiPage } from './pages/admin/ProfilOrganisasiPage';
+import { StrukturAdminPage } from './pages/admin/StrukturAdminPage';
+import { AdArtAdminPage } from './pages/admin/AdArtAdminPage';
+import { ProgramKerjaAdminPage } from './pages/admin/ProgramKerjaAdminPage';
+import { ProgramKerjaFormPage } from './pages/admin/ProgramKerjaFormPage';
+import { GaleriAdminPage } from './pages/admin/GaleriAdminPage';
+import { GaleriFormPage } from './pages/admin/GaleriFormPage';
 import { AuthGuard } from './components/auth/AuthGuard';
 
 export function App() {
@@ -74,13 +83,23 @@ export function App() {
 
           {/* Halaman Admin */}
           <Route
-            path="admin/persetujuan"
+            path="admin"
             element={
               <AuthGuard requireActive={true}>
-                <ApprovalsPage />
+                <AdminLayout />
               </AuthGuard>
             }
-          />
+          >
+            <Route index element={<AdminDashboardPage />} />
+            <Route path="persetujuan" element={<ApprovalsPage />} />
+            <Route path="program-kerja" element={<ProgramKerjaAdminPage />} />
+            <Route path="program-kerja/:id" element={<ProgramKerjaFormPage />} />
+            <Route path="galeri" element={<GaleriAdminPage />} />
+            <Route path="galeri/:id" element={<GaleriFormPage />} />
+            <Route path="profil-organisasi" element={<ProfilOrganisasiPage />} />
+            <Route path="struktur" element={<StrukturAdminPage />} />
+            <Route path="ad-art" element={<AdArtAdminPage />} />
+          </Route>
 
           {/* 404 Fallback */}
           <Route path="*" element={<NotFoundPage />} />
